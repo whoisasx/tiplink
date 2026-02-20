@@ -5,7 +5,17 @@ pub struct Response<T>{
   pub success: bool,
   pub message: String,
   pub status_code: u16,
-  pub data: Option<T>
+  pub value: Option<T>
+}
+impl<T> Response<T>{
+  pub fn new(success:bool,message:String,status_code:u16,value:Option<T>) -> Response<T>{
+    Response{
+      success,
+      message,
+      status_code,
+      value
+    }
+  }
 }
 
 pub fn send_response<T: serde::Serialize>(response: Response<T>) -> HttpResponse{

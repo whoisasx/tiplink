@@ -7,6 +7,7 @@ mod modules;
 mod utils;
 mod config;
 mod db;
+mod middlewares;
 use dotenv::dotenv;
 use modules::*;
 use crate::config::Config;

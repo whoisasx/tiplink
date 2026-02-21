@@ -1,5 +1,4 @@
 use serde::Deserialize;
-use uuid::Timestamp;
 
 #[derive(Deserialize, Debug)]
 pub struct CallbackQuery {
@@ -25,15 +24,16 @@ pub struct GoogleUserResponse{
   pub picture: String
 }
 
-pub struct RefreshTokenSchema{
+pub struct RefreshTokenAuth{
   pub id: String,
   pub user_id: String,
   pub token_hash: String,
   pub expires_at: i64
 }
 
-pub struct UserSchema{
+pub struct UserAuth{
   pub id: String,
   pub google_sub: String,
   pub email: String,
+  pub wallet:String
 }

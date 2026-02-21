@@ -1,4 +1,6 @@
 use sqlx::{Pool, postgres::{Postgres, PgPoolOptions}};
+pub mod dto;
+use dto::*;
 
 pub async fn create_db_pool(database_url: &String)-> Pool<Postgres>{
   PgPoolOptions::new()

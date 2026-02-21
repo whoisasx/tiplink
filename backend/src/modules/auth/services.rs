@@ -1,4 +1,4 @@
-use crate::modules::{TokenDesign, auth::dto::{GoogleTokenResponse, GoogleUserResponse, RefreshTokenSchema, UserSchema}};
+use crate::{db::dto::UserSchema, modules::{TokenDesign, auth::dto::{GoogleTokenResponse, GoogleUserResponse, RefreshTokenAuth, UserAuth}}};
 
 
 pub async fn upsert_user(token_info:&GoogleTokenResponse, user_info:&GoogleUserResponse)->bool{
@@ -25,10 +25,10 @@ pub fn hash_token(token:&String)->String{
   String::from("")
 }
 
-pub fn db_find_refresh_token(hashed_token:&String) -> Option<RefreshTokenSchema> {
+pub async fn get_refresh_token_details(hashed_token:&String) -> Option<RefreshTokenAuth> {
     None
 }
 
-pub fn db_find_user(user_id: &String) -> Option<UserSchema>{
+pub async fn get_user_details(user_id: &String)->Option<UserAuth>{
   None
 }

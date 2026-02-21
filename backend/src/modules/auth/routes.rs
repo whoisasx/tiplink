@@ -1,6 +1,6 @@
 use actix_web::{HttpRequest, HttpResponse, Responder, cookie::Cookie, delete, get, middleware::from_fn, web};
 use chrono::Utc;
-use crate::{config::Config, middlewares::auth_middleware, modules::{TokenDesign, auth::{dto::{CallbackQuery, GoogleTokenResponse, GoogleUserResponse}, services::{create_jwt_token, db_find_refresh_token, db_find_user, upsert_wallet, hash_token, upsert_user, upsert_refresh_token}}}, utils::{Response, send_response}};
+use crate::{config::Config, middlewares::auth_middleware, modules::{TokenDesign, auth::{dto::{CallbackQuery, GoogleTokenResponse, GoogleUserResponse}, services::{create_jwt_token, get_refresh_token_details, get_user_details, hash_token, upsert_refresh_token, upsert_user, upsert_wallet}}}, utils::{Response, send_response}};
 use serde_json::json;
 
 
@@ -98,7 +98,7 @@ pub async fn refresh_token(req:HttpRequest)->impl Responder{
   };
 
   let hashed_token=hash_token(&refresh_token);
-  let token_record= match db_find_refresh_token(&hashed_token){
+  let token_record= match get_refresh_token_details(&hashed_token).await{
     Some(h)=>h,
     None=>{
       return HttpResponse::Unauthorized()
@@ -113,7 +113,7 @@ pub async fn refresh_token(req:HttpRequest)->impl Responder{
       .json(Response::new(false,String::from("unauthorised, refresh token expired/invalid."),401,None::<String>));
   }
 
-  let user_record= match db_find_user(&token_record.user_id){
+  let user_record= match get_user_details(&token_record.user_id).await{
     Some(u)=>u,
     None => {
       return HttpResponse::Unauthorized()
@@ -122,7 +122,7 @@ pub async fn refresh_token(req:HttpRequest)->impl Responder{
     }
   };
 
-  let jwt_token=create_jwt_token(TokenDesign::new(user_record.google_sub, user_record.email));
+  let jwt_token=create_jwt_token(TokenDesign::new(user_record.google_sub, user_record.email, user_record.wallet));
 
   send_response(Response::new(true, String::from("jwt-token refreshed"), 200, Some(json!({"jwt_token": jwt_token}))))
 

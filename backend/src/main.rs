@@ -2,16 +2,20 @@ use std::io::Result;
 use actix_web::{App, HttpResponse, HttpServer, Responder, web};
 use actix_cors::Cors;
 use sqlx::migrate::Migrator;
+use dotenv::dotenv;
 
 mod modules;
 mod utils;
 mod config;
 mod db;
 mod middlewares;
-use dotenv::dotenv;
+
+use crate::config::*;
 use modules::*;
-use crate::config::Config;
 use db::*;
+
+
+
 
 pub async fn not_found()->impl Responder{
   HttpResponse::NotFound().body("You sent a request to no where")
@@ -45,9 +49,9 @@ async fn main()-> Result<()>{
     .wrap(cors)
     .service(
       web::scope("/api")
-      .configure(auth::routes::scoped_auth)
-      .configure(user::routes::scoped_user)
-      .configure(wallet::routes::scoped_wallet)
+      .configure(auth::routes::configure_auth_routes)
+      .configure(user::routes::configure_user_routes)
+      .configure(wallet::routes::configure_wallet_routes)
       .route("/health", web::to(health_check))
     )
     .default_service(web::to(not_found))

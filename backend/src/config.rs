@@ -11,7 +11,7 @@ pub struct Config{
   pub google_oauth_client_secret: String,
   pub redirect_url: String,
   pub database_url: String,
-  pub random_string: String
+  pub csrf_state_token: String
 }
 
 impl Config{
@@ -24,9 +24,9 @@ impl Config{
     let google_oauth_client_secret=env::var("GOOGLE_OAUTH_CLIENT_SECRET").expect("GOOGLE_OAUTH_CLIENT_SECRET must be set");
     let redirect_url=env::var("REDIRECT_URL").expect("REDIRECT_URL must be set");
     let database_url=env::var("DATABASE_URL").expect("DATABASE_URL must be set");
-    let random_string=env::var("RANDOM_CSRF_STRING").expect("RANDOM_CSRF_STRING must be set");
+    let csrf_state_token = env::var("RANDOM_CSRF_STRING").expect("RANDOM_CSRF_STRING must be set");
 
-    Config{
+    Config {
       client_origin,
       jwt_secret,
       jwt_expires_in,
@@ -35,7 +35,7 @@ impl Config{
       google_oauth_client_secret,
       redirect_url,
       database_url,
-      random_string
+      csrf_state_token,
     }
   }
 }

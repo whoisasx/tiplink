@@ -8,17 +8,17 @@ pub enum AppError {
     #[display("Bad request: {_0}")]
     BadRequest(String),
 
-    #[display("Unauthorized")]
-    Unauthorized,
+    #[display("Unauthorized: {_0}")]
+    Unauthorized(String),
 
     #[display("Forbidden")]
-    Forbidden,
+    _Forbidden,
 
     #[display("Not found: {_0}")]
     NotFound(String),
 
     #[display("Conflict: {_0}")]
-    Conflict(String),
+    _Conflict(String),
 
     #[display("Internal server error")]
     Internal,
@@ -28,10 +28,10 @@ impl ResponseError for AppError{
   fn status_code(&self) -> StatusCode {
     match self {
       AppError::BadRequest(_) => StatusCode::BAD_REQUEST,
-      AppError::Unauthorized => StatusCode::UNAUTHORIZED,
-      AppError::Forbidden => StatusCode::FORBIDDEN,
+      AppError::Unauthorized(_) => StatusCode::UNAUTHORIZED,
+      AppError::_Forbidden => StatusCode::FORBIDDEN,
       AppError::NotFound(_) => StatusCode::NOT_FOUND,
-      AppError::Conflict(_) => StatusCode::CONFLICT,
+      AppError::_Conflict(_) => StatusCode::CONFLICT,
       AppError::Internal => StatusCode::INTERNAL_SERVER_ERROR
     }
   }

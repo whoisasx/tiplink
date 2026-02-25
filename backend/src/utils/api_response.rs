@@ -22,13 +22,13 @@ impl<T:Serialize> ApiResponse<T>{
   pub fn ok(message: &str, data: T) -> HttpResponse{
     Self::success(message, data, StatusCode::OK)
   }
-  pub fn created(message: &str, data: T) -> HttpResponse{
+  pub fn _created(message: &str, data: T) -> HttpResponse{
     Self::success(message, data, StatusCode::CREATED)
   }
-  pub fn accepted(message: &str, data: T) -> HttpResponse{
+  pub fn _accepted(message: &str, data: T) -> HttpResponse{
     Self::success(message, data, StatusCode::ACCEPTED)
   }
-  pub fn no_content(message: &str) -> HttpResponse {
+  pub fn _no_content(message: &str) -> HttpResponse {
     // Self::success(message, None, StatusCode::NO_CONTENT)
     HttpResponse::NoContent().json(ApiResponse::<()>{
       success: true,

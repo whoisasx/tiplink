@@ -1,26 +1,31 @@
-use actix_web::{HttpRequest, HttpResponse, Responder, cookie::Cookie, delete, get, middleware::from_fn, web};
+use actix_web::{Error, HttpRequest, HttpResponse, cookie::Cookie, delete, get, middleware::from_fn, web};
 use chrono::Utc;
-use crate::{config::Config, middlewares::auth_middleware, modules::{TokenDesign, auth::{dto::{CallbackQuery, GoogleTokenResponse, GoogleUserResponse}, services::{create_jwt_token, get_refresh_token_details, get_user_details, hash_token, upsert_refresh_token, upsert_user, upsert_wallet}}}, utils::{Response, send_response}};
+use crate::{config::Config, middlewares::auth_middleware, modules::JwtClaims, utils::{ApiResponse, AppError}};
 use serde_json::json;
+
+use super::{
+  handlers::*,
+  dto::*
+};
 
 
 #[get("/google/init")]
-pub async fn google_init(config:web::Data<Config>)->impl Responder{
-  let google_client_id=&config.google_oauth_client_id;
-  let random_string=&config.random_string;
-  let redirect_uri=&config.redirect_url;
+pub async fn initiate_google_auth(config: web::Data<Config>) -> Result<HttpResponse, AppError> {
+  let google_client_id = &config.google_oauth_client_id;
+  let csrf_state_token = &config.csrf_state_token;
+  let redirect_uri = &config.redirect_url;
 
   let url = format!(
     "https://accounts.google.com/o/oauth2/v2/auth?client_id={}&redirect_uri={}&response_type=code&access_type=offline&prompt=consent&scope=openid%20email%20profile&state={}",
-    google_client_id, redirect_uri, random_string
+    google_client_id, redirect_uri, csrf_state_token
   );
 
-  send_response(Response::new(true, String::from("redirect to google api"), 200, Some(url)))
+  Ok(ApiResponse::ok("Google redirect URL", url))
 }
 
 #[get("/callback/google")]
-pub async fn google_callback(query:web::Query<CallbackQuery>,config:web::Data<Config>)-> actix_web::Result<impl Responder>{
-  if query.state!=config.random_string{
+pub async fn handle_google_callback(query: web::Query<OAuthCallbackQuery>, config: web::Data<Config>) -> Result<HttpResponse, Error> {
+  if query.state != config.csrf_state_token {
     return Ok(HttpResponse::Found()
       .append_header(("Location", config.client_origin.clone()))
       .cookie(Cookie::build("auth_status", "error").path("/").http_only(false).finish())
@@ -41,7 +46,7 @@ pub async fn google_callback(query:web::Query<CallbackQuery>,config:web::Data<Co
     .send()
     .await
     .map_err(actix_web::error::ErrorInternalServerError)?
-    .json::<GoogleTokenResponse>()
+    .json::<GoogleOAuthTokenResponse>()
     .await
     .map_err(actix_web::error::ErrorInternalServerError)?;
 
@@ -50,7 +55,7 @@ pub async fn google_callback(query:web::Query<CallbackQuery>,config:web::Data<Co
     .send()
     .await
     .map_err(actix_web::error::ErrorInternalServerError)?
-    .json::<GoogleUserResponse>()
+    .json::<GoogleUserInfo>()
     .await
     .map_err(actix_web::error::ErrorInternalServerError)?;
 
@@ -62,7 +67,7 @@ pub async fn google_callback(query:web::Query<CallbackQuery>,config:web::Data<Co
       .finish())
   }
 
-  if !upsert_refresh_token(&token_info,&user_info).await {
+  if !upsert_refresh_token(&token_info, &user_info).await {
     return Ok(HttpResponse::Found()
       .append_header(("Location", config.client_origin.clone()))
       .cookie(Cookie::build("auth_status", "error").path("/").http_only(false).finish())
@@ -70,8 +75,8 @@ pub async fn google_callback(query:web::Query<CallbackQuery>,config:web::Data<Co
       .finish())
   }
 
-  let wallet=upsert_wallet(&token_info, &user_info).await;
-  if wallet.len()<32 || wallet.len()>44 {
+  let wallet = upsert_wallet(&token_info, &user_info).await;
+  if wallet.len() < 32 || wallet.len() > 44 {
     return Ok(HttpResponse::Found()
       .append_header(("Location", config.client_origin.clone()))
       .cookie(Cookie::build("auth_status", "error").path("/").http_only(false).finish())
@@ -79,72 +84,91 @@ pub async fn google_callback(query:web::Query<CallbackQuery>,config:web::Data<Co
       .finish())
   }
 
-  //TODO: add .secure(true) for production -> @87 line
+  //TODO: add .secure(true) for production
   Ok(HttpResponse::Found()
-      .append_header(("Location", config.client_origin.clone()))
-      .cookie(Cookie::build("auth_status", "success").path("/").http_only(false).finish())
-      .cookie(Cookie::build("refresh_token", token_info.refresh_token).path("/").http_only(true).finish())
-      .finish()
-    )
+    .append_header(("Location", config.client_origin.clone()))
+    .cookie(Cookie::build("auth_status", "success").path("/").http_only(false).finish())
+    .cookie(Cookie::build("refresh_token", token_info.refresh_token).path("/").http_only(true).finish())
+    .finish()
+  )
 }
 
 #[get("/refresh")]
-pub async fn refresh_token(req:HttpRequest)->impl Responder{
-  let refresh_token=match req.cookie("refresh_token"){
-    Some(r)=> r.value().to_string(),
-    None=>{
-      return send_response(Response::new(false,String::from("unauthorised, refresh token missing."),401,None::<String>))
+pub async fn handle_token_refresh(req: HttpRequest) -> Result<HttpResponse, AppError> {
+  let refresh_token = match req.cookie("refresh_token") {
+    Some(r) => r.value().to_string(),
+    None => {
+      return Err(AppError::Unauthorized("Refresh token not provided".to_string()))
     }
   };
 
-  let hashed_token=hash_token(&refresh_token);
-  let token_record= match get_refresh_token_details(&hashed_token).await{
-    Some(h)=>h,
-    None=>{
-      return HttpResponse::Unauthorized()
+  let hashed_token = hash_refresh_token(&refresh_token);
+  let token_record = match get_refresh_token_record(&hashed_token).await {
+    Some(h) => h,
+    None => {
+      return Ok(
+        HttpResponse::Unauthorized()
         .cookie(Cookie::build("refresh_token", "").path("/").max_age(actix_web::cookie::time::Duration::seconds(0)).finish())
-        .json(Response::new(false,String::from("unauthorised, refresh token invalid."),401,None::<String>));
+        .json(ApiResponse::<String> {
+          success: false,
+          message: "Unauthorized: invalid refresh token.".to_string(),
+          result: None,
+          error: Some("Unauthorized: invalid refresh token.".to_string())
+        })
+      );
     }
   };
 
-  if token_record.expires_at<Utc::now().timestamp() || token_record.token_hash !=hashed_token {
-    return HttpResponse::Unauthorized()
+  if token_record.expires_at < Utc::now().timestamp() || token_record.token_hash != hashed_token {
+    return Ok(
+      HttpResponse::Unauthorized()
       .cookie(Cookie::build("refresh_token", "").path("/").max_age(actix_web::cookie::time::Duration::seconds(0)).finish())
-      .json(Response::new(false,String::from("unauthorised, refresh token expired/invalid."),401,None::<String>));
+      .json(ApiResponse::<String> {
+        success: false,
+        message: "Unauthorized: refresh token expired.".to_string(),
+        result: None,
+        error: Some("Unauthorized: refresh token expired.".to_string())
+      })
+    );
   }
 
-  let user_record= match get_user_details(&token_record.user_id).await{
-    Some(u)=>u,
+  let user_record = match get_user_record(&token_record.user_id).await {
+    Some(u) => u,
     None => {
-      return HttpResponse::Unauthorized()
+      return Ok(
+        HttpResponse::Unauthorized()
         .cookie(Cookie::build("refresh_token", "").path("/").max_age(actix_web::cookie::time::Duration::seconds(0)).finish())
-        .json(Response::new(false,String::from("unauthorised, user not found."),401,None::<String>));
+        .json(ApiResponse::<String> {
+          success: false,
+          message: "Unauthorized: user not found.".to_string(),
+          result: None,
+          error: Some("Unauthorized: user not found.".to_string())
+        })
+      )
     }
   };
 
-  let jwt_token=create_jwt_token(TokenDesign::new(user_record.google_sub, user_record.email, user_record.wallet));
-
-  send_response(Response::new(true, String::from("jwt-token refreshed"), 200, Some(json!({"jwt_token": jwt_token}))))
-
+  let jwt_token = create_jwt_token(JwtClaims::new(user_record.id, user_record.email, user_record.wallet));
+  Ok(ApiResponse::ok("JWT token refreshed", json!({"jwt_token": jwt_token})))
 }
 
 #[delete("/logout")]
-pub async fn log_out()->impl Responder{
-  HttpResponse::Ok()
+pub async fn handle_logout() -> Result<HttpResponse, AppError> {
+  Ok(HttpResponse::Ok()
     .cookie(Cookie::build("refresh_token", "").path("/").max_age(actix_web::cookie::time::Duration::seconds(0)).finish())
-    .json(json!({"status":"user logged out."}))
+    .json(json!({"status": "user logged out."})))
 }
 
-pub fn scoped_auth(cfg: &mut web::ServiceConfig){
+pub fn configure_auth_routes(cfg: &mut web::ServiceConfig) {
   cfg.service(
     web::scope("auth")
-      .service(google_init)
-      .service(google_callback)
-      .service(refresh_token)
+      .service(initiate_google_auth)
+      .service(handle_google_callback)
+      .service(handle_token_refresh)
       .service(
         web::scope("")
           .wrap(from_fn(auth_middleware))
-          .service(log_out)
+          .service(handle_logout)
       )
   );
 }

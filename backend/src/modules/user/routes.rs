@@ -1,36 +1,31 @@
-use actix_web::{HttpRequest, HttpResponse, Responder, get, middleware::from_fn, web, HttpMessage};
-use serde_json::json;
+use actix_web::{HttpMessage, HttpRequest, HttpResponse, get, middleware::from_fn, web};
 
-use crate::{middlewares::auth_middleware, modules::{TokenDesign, user::services::fetch_user_details}, utils::{Response, send_response}};
+use crate::{middlewares::auth_middleware, modules::JwtClaims, utils::{ApiResponse, AppError}};
+use super::handlers::*;
 
 #[get("/me")]
-pub async fn get_user(req:HttpRequest) -> impl Responder {
-  let token_claims =match req.extensions().get::<TokenDesign>().cloned(){
-    Some(t)=>t,
-    None =>{
-      return send_response(Response::new(false,String::from("invalid jwt token."),401,None::<String>))
+pub async fn handle_get_current_user(req: HttpRequest) -> Result<HttpResponse, AppError> {
+  let token_claims = match req.extensions().get::<JwtClaims>().cloned() {
+    Some(t) => t,
+    None => {
+      return Err(AppError::Unauthorized("Invalid JWT token".to_string()))
     }
   };
 
-  let user_record= match fetch_user_details(&token_claims.google_sub).await {
+  let user_profile = match get_user_profile(&token_claims.id).await {
     Some(u) => u,
-    None=>{
-      return send_response(Response::new(false,String::from("internal server error"),500,None::<String>));
+    None => {
+      return Err(AppError::Internal)
     }
   };
 
-  send_response(Response { 
-    success: true, 
-    message: String::from("user details fetched"), 
-    status_code: 200, 
-    value: Some(json!(user_record)) 
-  })
+  Ok(ApiResponse::ok("User details fetched.", user_profile))
 }
 
-pub fn scoped_user(cfg: &mut web::ServiceConfig){
+pub fn configure_user_routes(cfg: &mut web::ServiceConfig) {
   cfg.service(
     web::scope("user")
-      .service(get_user)
       .wrap(from_fn(auth_middleware))
+      .service(handle_get_current_user)
   );
 }

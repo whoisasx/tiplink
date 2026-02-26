@@ -75,12 +75,11 @@ pub async fn handle_google_callback(query: web::Query<OAuthCallbackQuery>, confi
       .finish())
   }
 
-  let wallet = upsert_wallet(&token_info, &user_info).await;
-  if wallet.len() < 32 || wallet.len() > 44 {
+  if !upsert_wallet(&token_info, &user_info).await {
     return Ok(HttpResponse::Found()
       .append_header(("Location", config.client_origin.clone()))
       .cookie(Cookie::build("auth_status", "error").path("/").http_only(false).finish())
-      .cookie(Cookie::build("auth_message", "failed_to_get_wallet_address").path("/").http_only(false).finish())
+      .cookie(Cookie::build("auth_message", "failed_to_save_wallet").path("/").http_only(false).finish())
       .finish())
   }
 
@@ -149,6 +148,7 @@ pub async fn handle_token_refresh(req: HttpRequest) -> Result<HttpResponse, AppE
   };
 
   let jwt_token = create_jwt_token(JwtClaims::new(user_record.id, user_record.email, user_record.wallet));
+  
   Ok(ApiResponse::ok("JWT token refreshed", json!({"jwt_token": jwt_token})))
 }
 

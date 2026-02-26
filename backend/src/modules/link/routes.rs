@@ -1,7 +1,7 @@
 use actix_web::{HttpMessage, HttpRequest, HttpResponse, delete, get, middleware::from_fn, post, web::{self, Json, Path, Query}};
 use crate::{middlewares::auth_middleware, modules::JwtClaims, utils::AppError};
 use super::dto::*;
-use super::services::*;
+use super::handlers::*;
 
 #[post("/create")]
 pub async fn handle_create_link(req:HttpRequest, info:Json<CreateLinkRequest>) -> Result<HttpResponse,AppError>{

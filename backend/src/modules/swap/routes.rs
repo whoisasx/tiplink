@@ -20,9 +20,7 @@ pub async fn get_swap_quote(req:HttpRequest, query:Query<SwapQuoteQuery>) ->Resu
     return Err(AppError::BadRequest(String::from("Invalid input/output mints.")))
   }
 
-  let quote_response=get_jupiter_quote(input_mint, output_mint, slippage_bps, amount).await.map_err(|_| AppError::Internal)?;
-
-  Ok(ApiResponse::ok("Quote generated.", quote_response))
+  get_jupiter_quote(input_mint, output_mint, slippage_bps, amount).await
 }
 
 
@@ -32,11 +30,9 @@ pub async fn execute_swap(req:HttpRequest, info: Json<SwapQuoteResponse>) -> Res
     Some(t)=>t,
     None=> return Err(AppError::Unauthorized("Invalid JWT token".to_string()))
   };
-
   let info=info.into_inner();
-  let execute_response=execute_quote(info,token_claims).await.map_err(|_| AppError::Internal)?;
 
-  Ok(ApiResponse::ok("Swap execution.", execute_response))
+  execute_quote(info,token_claims).await
 }
 
 #[get("/history")]
@@ -45,11 +41,9 @@ pub async fn get_swap_history(req: HttpRequest, query:Query<SwapHistoryQuery>) -
     Some(t)=>t,
     None=> return Err(AppError::Unauthorized("Invalid JWT token".to_string()))
   };
-
   let query=query.into_inner();
-  let swap_history=find_swap_history(query,token_claims).await.map_err(|_| AppError::Internal)?;
 
-  Ok(ApiResponse::ok("Swap history fetched.", swap_history))
+  find_swap_history(query, token_claims).await
 }
 
 pub fn configure_swap_routes(cfg: &mut web::ServiceConfig){

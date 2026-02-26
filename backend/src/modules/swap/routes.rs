@@ -1,6 +1,6 @@
 use actix_web::{HttpMessage, HttpRequest, HttpResponse, get, middleware::from_fn, post, web::{self, Json, Query}};
 
-use crate::{middlewares::auth_middleware, modules::JwtClaims, utils::{ApiResponse, AppError}};
+use crate::{middlewares::auth_middleware, modules::JwtClaims, utils::{ AppError}};
 use super::dto::*;
 use super::services::*;
 

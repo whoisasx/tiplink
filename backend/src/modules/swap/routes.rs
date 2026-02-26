@@ -1,4 +1,4 @@
-use actix_web::{HttpMessage, HttpRequest, HttpResponse, get, middleware::from_fn, post, web::{self, Query}};
+use actix_web::{HttpMessage, HttpRequest, HttpResponse, get, middleware::from_fn, post, web::{self, Json, Query}};
 
 use crate::{middlewares::auth_middleware, modules::JwtClaims, utils::{ApiResponse, AppError}};
 use super::dto::*;
@@ -27,14 +27,14 @@ pub async fn get_swap_quote(req:HttpRequest, query:Query<SwapQuoteQuery>) ->Resu
 
 
 #[post("/execute")]
-pub async fn execute_swap(req:HttpRequest, query: Query<SwapQuoteResponse>) -> Result<HttpResponse,AppError> {
+pub async fn execute_swap(req:HttpRequest, info: Json<SwapQuoteResponse>) -> Result<HttpResponse,AppError> {
   let token_claims=match req.extensions().get::<JwtClaims>().cloned() {
     Some(t)=>t,
     None=> return Err(AppError::Unauthorized("Invalid JWT token".to_string()))
   };
 
-  let query=query.into_inner();
-  let execute_response=execute_quote(query,token_claims).await.map_err(|_| AppError::Internal)?;
+  let info=info.into_inner();
+  let execute_response=execute_quote(info,token_claims).await.map_err(|_| AppError::Internal)?;
 
   Ok(ApiResponse::ok("Swap execution.", execute_response))
 }

@@ -4,7 +4,6 @@ use crate::{
   modules::*,
   utils::*
 };
-use serde_json::json;
 use super::{dto::*, handlers::*};
 
 #[get("/balance")]
@@ -16,8 +15,7 @@ pub async fn handle_get_all_balances(req: HttpRequest) -> Result<HttpResponse, A
     }
   };
 
-  let wallet_balances = get_all_wallet_balances(&token_claims.id, &token_claims.wallet).await;
-  Ok(ApiResponse::ok("All balances fetched", wallet_balances))
+  get_all_wallet_balances(token_claims).await
 }
 
 #[get("/balance/{mint}")]
@@ -30,14 +28,7 @@ pub async fn handle_get_token_balance(req: HttpRequest, path: web::Path<String>)
     }
   };
 
-  let token_balance = match get_wallet_token_balance(&token_claims.id, &token_claims.wallet, mint).await {
-    Some(b) => b,
-    None => {
-      return Err(AppError::NotFound(String::from("Token not found in wallet")))
-    }
-  };
-
-  Ok(ApiResponse::ok("Token balance fetched", token_balance))
+  get_wallet_token_balance(token_claims, mint).await
 }
 
 #[get("/transactions")]
@@ -49,14 +40,7 @@ pub async fn handle_get_transactions(req: HttpRequest, query: web::Query<Transac
     }
   };
 
-  let (paginated_transactions, pagination) = get_paginated_transactions(token_claims, query).await;
-
-  let result = json!({
-    "pagination": pagination,
-    "transactions": paginated_transactions
-  });
-
-  Ok(ApiResponse::ok("Transactions fetched", result))
+  get_paginated_transactions(token_claims, query).await
 }
 
 #[get("/transactions/{id}")]
@@ -68,10 +52,7 @@ pub async fn handle_get_transaction(req: HttpRequest, path: web::Path<String>) -
       return Err(AppError::Unauthorized(String::from("Invalid JWT token")))
     }
   };
-
-  let transaction = get_transaction_detail(token_claims, txn_id).await.map_err(|e| AppError::BadRequest(e.to_string()))?;
-
-  Ok(ApiResponse::ok("Transaction fetched.", transaction))
+  get_transaction_detail(token_claims, txn_id).await
 }
 
 #[post("/send")]
@@ -82,11 +63,8 @@ pub async fn handle_send_transaction(req: HttpRequest, info: web::Json<SendTrans
       return Err(AppError::Unauthorized(String::from("Invalid JWT token")))
     }
   };
-
-  let info = info.into_inner();
-  let result = send_transaction(info).await.map_err(|e| AppError::BadRequest(e.to_string()))?;
-
-  Ok(ApiResponse::ok("Transaction submitted", result))
+  let info=info.into_inner();
+  send_transaction(info).await
 }
 
 #[post("/send/estimate")]
@@ -101,10 +79,9 @@ pub async fn handle_estimate_fee(req: HttpRequest, info: web::Json<EstimateTrans
   if !is_valid_solana_address(&info.to_account) {
     return Err(AppError::BadRequest(String::from("Invalid Solana address")));
   }
-
   let info = info.into_inner();
-  let fee_breakdown = estimate_transaction_fee(info).await;
-  Ok(ApiResponse::ok("Fee breakdown fetched", fee_breakdown))
+
+  estimate_transaction_fee(info).await
 }
 
 pub fn configure_wallet_routes(cfg: &mut web::ServiceConfig) {

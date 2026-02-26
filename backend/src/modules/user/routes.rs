@@ -1,6 +1,6 @@
 use actix_web::{HttpMessage, HttpRequest, HttpResponse, get, middleware::from_fn, web};
 
-use crate::{middlewares::auth_middleware, modules::JwtClaims, utils::{ApiResponse, AppError}};
+use crate::{middlewares::auth_middleware, modules::JwtClaims, utils::{ AppError}};
 use super::handlers::*;
 
 #[get("/me")]
@@ -12,14 +12,7 @@ pub async fn handle_get_current_user(req: HttpRequest) -> Result<HttpResponse, A
     }
   };
 
-  let user_profile = match get_user_profile(&token_claims.id).await {
-    Some(u) => u,
-    None => {
-      return Err(AppError::Internal)
-    }
-  };
-
-  Ok(ApiResponse::ok("User details fetched.", user_profile))
+  get_user_profile(token_claims).await
 }
 
 pub fn configure_user_routes(cfg: &mut web::ServiceConfig) {

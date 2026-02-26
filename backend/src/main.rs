@@ -52,6 +52,8 @@ async fn main()-> Result<()>{
       .configure(auth::routes::configure_auth_routes)
       .configure(user::routes::configure_user_routes)
       .configure(wallet::routes::configure_wallet_routes)
+      .configure(swap::routes::configure_swap_routes)
+      .configure(link::routes::configure_links_routes)
       .route("/health", web::to(health_check))
     )
     .default_service(web::to(not_found))

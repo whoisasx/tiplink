@@ -2,7 +2,7 @@ use actix_web::{HttpMessage, HttpRequest, HttpResponse, get, middleware::from_fn
 
 use crate::{middlewares::auth_middleware, modules::JwtClaims, utils::{ AppError}};
 use super::dto::*;
-use super::services::*;
+use super::handlers::*;
 
 #[get("/quote")]
 pub async fn get_swap_quote(req:HttpRequest, query:Query<SwapQuoteQuery>) ->Result<HttpResponse,AppError>{

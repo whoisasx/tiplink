@@ -30,7 +30,9 @@ async fn main()-> Result<()>{
   dotenv().ok();
   env_logger::init();
   let config=web::Data::new(Config::init());
-  let pool=web::Data::new(create_db_pool(&config.database_url).await);
+  let raw_pool = create_db_pool(&config.database_url).await;
+  db::init_pool(raw_pool.clone());
+  let pool=web::Data::new(raw_pool);
   
   static MIGRATOR:Migrator=sqlx::migrate!("src/db/migrations");
   MIGRATOR.run(pool.as_ref()).await.expect("Migration failed");

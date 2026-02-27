@@ -1,13 +1,13 @@
 use serde::Deserialize;
 
 #[derive(Deserialize, Debug)]
-pub struct CallbackQuery {
+pub struct OAuthCallbackQuery {
   pub code: String,
-  pub state: String
+  pub state: String,
 }
 
 #[derive(Deserialize, Debug)]
-pub struct GoogleTokenResponse {
+pub struct GoogleOAuthTokenResponse {
   pub access_token: String,
   pub expires_in: i64,
   pub refresh_token: String,
@@ -16,24 +16,24 @@ pub struct GoogleTokenResponse {
   pub id_token: Option<String>,
 }
 
-#[derive(Deserialize,Debug)]
-pub struct GoogleUserResponse{
+#[derive(Deserialize, Debug)]
+pub struct GoogleUserInfo {
   pub email: String,
   pub name: String,
   pub id: String,
-  pub picture: String
+  pub picture: String,
 }
 
-pub struct RefreshTokenAuth{
+pub struct RefreshTokenRecord {
   pub id: String,
   pub user_id: String,
   pub token_hash: String,
-  pub expires_at: i64
+  pub expires_at: i64,
 }
 
-pub struct UserAuth{
+pub struct UserRecord {
   pub id: String,
   pub google_sub: String,
   pub email: String,
-  pub wallet:String
+  pub wallet: String,
 }

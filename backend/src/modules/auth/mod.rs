@@ -1,9 +1,6 @@
 pub mod routes;
 pub mod dto;
-pub mod handlers;
 pub mod services;
+pub mod handlers;
 
-use routes::*;
-use dto::*;
-use handlers::*;
-use services::*;
+pub use handlers::*;

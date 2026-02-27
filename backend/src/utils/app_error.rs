@@ -15,7 +15,7 @@ pub enum AppError {
     _Forbidden,
 
     #[display("Not found: {_0}")]
-    NotFound(String),
+    _NotFound(String),
 
     #[display("Conflict: {_0}")]
     _Conflict(String),
@@ -30,7 +30,7 @@ impl ResponseError for AppError{
       AppError::BadRequest(_) => StatusCode::BAD_REQUEST,
       AppError::Unauthorized(_) => StatusCode::UNAUTHORIZED,
       AppError::_Forbidden => StatusCode::FORBIDDEN,
-      AppError::NotFound(_) => StatusCode::NOT_FOUND,
+      AppError::_NotFound(_) => StatusCode::NOT_FOUND,
       AppError::_Conflict(_) => StatusCode::CONFLICT,
       AppError::Internal => StatusCode::INTERNAL_SERVER_ERROR
     }

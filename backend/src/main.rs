@@ -1,18 +1,16 @@
 use std::io::Result;
 use actix_web::{App, HttpResponse, HttpServer, Responder, web};
 use actix_cors::Cors;
-use sqlx::migrate::Migrator;
 use dotenv::dotenv;
 
 mod modules;
 mod utils;
 mod config;
-mod db;
 mod middlewares;
 
 use crate::config::*;
 use modules::*;
-use db::*;
+use store::{create_db_pool,init_pool};
 
 
 
@@ -31,11 +29,10 @@ async fn main()-> Result<()>{
   env_logger::init();
   let config=web::Data::new(Config::init());
   let raw_pool = create_db_pool(&config.database_url).await;
-  db::init_pool(raw_pool.clone());
-  let pool=web::Data::new(raw_pool);
-  
-  static MIGRATOR:Migrator=sqlx::migrate!("src/db/migrations");
-  MIGRATOR.run(pool.as_ref()).await.expect("Migration failed");
+  init_pool(raw_pool.clone());
+  let pool = web::Data::new(raw_pool);
+
+  store::run_migrations().await.expect("Migration failed");
 
   println!("server is running on port: 3000");
 

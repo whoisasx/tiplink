@@ -1,6 +1,7 @@
-use actix_web::{Error, body::BoxBody, dev::{ServiceRequest, ServiceResponse}, http::header, middleware::Next, HttpMessage};
+use actix_web::{ Error, HttpMessage, ResponseError, body::BoxBody, dev::{ServiceRequest, ServiceResponse}, http::header, middleware::Next};
 
-use crate::{modules::auth::services::verify_jwt_token, utils::{Response, send_response}};
+use crate::modules::auth::*;
+use crate::utils::*;
 
 pub async fn auth_middleware(req:ServiceRequest, next: Next<BoxBody>)->Result<ServiceResponse<BoxBody>,Error>{
   let auth_header=req
@@ -17,7 +18,7 @@ pub async fn auth_middleware(req:ServiceRequest, next: Next<BoxBody>)->Result<Se
     Some(t)=>t,
     None=>{
       let(req,_)=req.into_parts();
-      let res=send_response(Response::new(false,String::from("anauthorised request"),401,None::<String>));
+      let res=AppError::Unauthorized("JWT token not provided.".to_string()).error_response();
       return Ok(ServiceResponse::new(req,res));
     }
   };
@@ -26,7 +27,7 @@ pub async fn auth_middleware(req:ServiceRequest, next: Next<BoxBody>)->Result<Se
     Ok(c)=>c,
     Err(_msg)=>{
       let(req,_)=req.into_parts();
-      let res=send_response(Response::new(false,String::from("anauthorised request"),401,None::<String>));
+      let res=AppError::Unauthorized("Invalid JWT token.".to_string()).error_response();
       return Ok(ServiceResponse::new(req,res));
     }
   };

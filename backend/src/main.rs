@@ -12,9 +12,6 @@ use crate::config::*;
 use modules::*;
 use store::{create_db_pool,init_pool};
 
-
-
-
 pub async fn not_found()->impl Responder{
   HttpResponse::NotFound().body("You sent a request to no where")
 }

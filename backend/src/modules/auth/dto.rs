@@ -35,5 +35,7 @@ pub struct UserRecord {
   pub id: String,
   pub google_sub: String,
   pub email: String,
-  pub wallet: String,
+  pub display_name: Option<String>,
+  pub avatar_url: Option<String>,
+  pub wallet: Option<String>,
 }

@@ -1,0 +1,63 @@
+use uuid::Uuid;
+use crate::{dto::WalletKeyRow, pool::pool};
+
+pub async fn insert_wallet_key(
+    user_id: Uuid,
+    pubkey: &str,
+    shard_index: i32,
+    encrypted_share: &str,
+) -> Result<WalletKeyRow, sqlx::Error> {
+    sqlx::query_as!(
+        WalletKeyRow,
+        r#"
+        INSERT INTO wallet_keys (user_id, pubkey, shard_index, encrypted_share)
+        VALUES ($1, $2, $3, $4)
+        RETURNING *
+        "#,
+        user_id,
+        pubkey,
+        shard_index,
+        encrypted_share,
+    )
+    .fetch_one(pool())
+    .await
+}
+
+pub async fn find_wallet_key_by_user_id(
+    user_id: Uuid,
+) -> Result<Option<WalletKeyRow>, sqlx::Error> {
+    sqlx::query_as!(
+        WalletKeyRow,
+        "SELECT * FROM wallet_keys WHERE user_id = $1 AND status = 'active'",
+        user_id,
+    )
+    .fetch_optional(pool())
+    .await
+}
+
+pub async fn find_wallet_key_by_pubkey(
+    pubkey: &str,
+) -> Result<Option<WalletKeyRow>, sqlx::Error> {
+    sqlx::query_as!(
+        WalletKeyRow,
+        "SELECT * FROM wallet_keys WHERE pubkey = $1",
+        pubkey,
+    )
+    .fetch_optional(pool())
+    .await
+}
+
+pub async fn update_wallet_key_status(
+    id: Uuid,
+    status: &str,
+) -> Result<bool, sqlx::Error> {
+    let result = sqlx::query!(
+        "UPDATE wallet_keys SET status = $1, updated_at = NOW() WHERE id = $2",
+        status,
+        id,
+    )
+    .execute(pool())
+    .await?;
+
+    Ok(result.rows_affected() > 0)
+}

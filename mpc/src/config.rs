@@ -3,22 +3,11 @@ use std::env;
 #[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct Config {
-    /// Port the MPC HTTP server listens on.
     pub port: u16,
-    /// PostgreSQL connection string — shared with the backend database.
     pub database_url: String,
-    /// Shared HMAC secret used to verify escrow-signer requests from the backend.
-    /// Must match `ESCROW_HMAC_SECRET` in the backend environment.
     pub escrow_hmac_secret: String,
-    /// High-entropy master secret used to:
-    ///   (a) deterministically derive per-user ed25519 keypairs, and
-    ///   (b) encrypt the derived private key before storing it in the database.
-    /// Keep this in a secrets manager in production; never commit it.
     pub master_secret: String,
-    /// Base58-encoded 64-byte secret key of the platform escrow account.
-    /// Used to sign transfers initiated by the escrow signer.
     pub escrow_private_key: String,
-    /// Solana JSON-RPC endpoint.
     pub solana_rpc_url: String,
 }
 

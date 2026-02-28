@@ -1,0 +1,5 @@
+[env]
+# Use the .sqlx/ cache for compile-time query verification.
+# Avoids needing DATABASE_URL set in the shell when running cargo build/watch.
+# Run `make sqlx-prepare` after adding or changing any sqlx::query_as!() macro.
+SQLX_OFFLINE = "true"

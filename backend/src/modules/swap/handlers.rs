@@ -1,37 +1,20 @@
 use chrono::Utc;
-use reqwest::Client;
-use serde_json::json;
 use uuid::Uuid;
+use serde_json::json;
 
 use store::transactions::{find_swap_transactions_by_user, count_swap_transactions_by_user, insert_transaction};
 
-use crate::{config::Config, utils::{forward_swap_sign, AppError, MpcSwapSignRequest}};
+use crate::{
+    config::Config,
+    utils::{
+        build_swap_transaction, jupiter_get_quote, forward_swap_sign,
+        AppError, MpcSwapSignRequest,
+    },
+};
 
 use super::dto::*;
 
-pub fn is_valid_mint(mint: &str) -> bool {
-    if mint == "SOL" { return true; }
-    let len = mint.len();
-    len >= 32
-        && len <= 44
-        && mint
-            .chars()
-            .all(|c| "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz".contains(c))
-}
-
-fn normalize_mint<'a>(mint: &'a str, sol_mint: &'a str) -> &'a str {
-    if mint == "SOL" { sol_mint } else { mint }
-}
-
-fn extract_route_label(route_plan: &[serde_json::Value]) -> String {
-    route_plan
-        .first()
-        .and_then(|r| r.get("swapInfo"))
-        .and_then(|si| si.get("label"))
-        .and_then(|l| l.as_str())
-        .unwrap_or("Jupiter")
-        .to_string()
-}
+pub use crate::utils::is_valid_mint;
 
 pub async fn get_quote(
     input_mint:   &str,
@@ -40,65 +23,16 @@ pub async fn get_quote(
     slippage_bps: u16,
     config:       &Config,
 ) -> Result<SwapQuoteResponse, AppError> {
-    let input  = normalize_mint(input_mint,  &config.sol_mint);
-    let output = normalize_mint(output_mint, &config.sol_mint);
-
-    let url = format!(
-        "{}?inputMint={}&outputMint={}&amount={}&slippageBps={}",
-        config.jupiter_quote_url, input, output, amount, slippage_bps
-    );
-
-    let client = Client::new();
-    let res = client
-        .get(&url)
-        .send()
-        .await
-        .map_err(|e| {
-            tracing::error!("Jupiter quote request failed: {e}");
-            AppError::Internal
-        })?;
-
-    if !res.status().is_success() {
-        let status = res.status();
-        let body   = res.text().await.unwrap_or_default();
-        tracing::error!("Jupiter quote returned {status}: {body}");
-        return Err(AppError::BadRequest(String::from(
-            "Jupiter quote unavailable — check mint addresses or try again",
-        )));
-    }
-
-    let raw: serde_json::Value = res.json().await.map_err(|e| {
-        tracing::error!("Jupiter quote parse error: {e}");
-        AppError::Internal
-    })?;
-
-    let out_amount: u64 = raw
-        .get("outAmount")
-        .and_then(|v| v.as_str())
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(0);
-
-    let price_impact = raw
-        .get("priceImpactPct")
-        .and_then(|v| v.as_str())
-        .unwrap_or("0")
-        .to_string();
-
-    let route_label = raw
-        .get("routePlan")
-        .and_then(|v| v.as_array())
-        .map(|rp| extract_route_label(rp))
-        .unwrap_or_else(|| "Jupiter".to_string());
-
+    let q = jupiter_get_quote(input_mint, output_mint, amount, slippage_bps, config).await?;
     Ok(SwapQuoteResponse {
-        input_mint:    input.to_string(),
-        output_mint:   output.to_string(),
-        input_amount:  amount,
-        output_amount: out_amount,
-        price_impact,
-        route_label,
-        slippage_bps,
-        quote_raw: raw,
+        input_mint:    q.input_mint,
+        output_mint:   q.output_mint,
+        input_amount:  q.input_amount,
+        output_amount: q.output_amount,
+        price_impact:  q.price_impact,
+        route_label:   q.route_label,
+        slippage_bps:  q.slippage_bps,
+        quote_raw:     q.quote_raw,
     })
 }
 
@@ -108,50 +42,15 @@ pub async fn execute_swap(
     req:         SwapExecuteRequest,
     config:      &Config,
 ) -> Result<SwapExecuteResponse, AppError> {
-    let client    = Client::new();
-    let swap_body = json!({
-        "quoteResponse":    req.quote_raw,
-        "userPublicKey":    user_wallet,
-        "wrapAndUnwrapSol": true,
-    });
-
-    let swap_res = client
-        .post(&config.jupiter_swap_url)
-        .json(&swap_body)
-        .send()
-        .await
-        .map_err(|e| {
-            tracing::error!("Jupiter swap request failed: {e}");
-            AppError::Internal
-        })?;
-
-    if !swap_res.status().is_success() {
-        let status = swap_res.status();
-        let body   = swap_res.text().await.unwrap_or_default();
-        tracing::error!("Jupiter swap returned {status}: {body}");
-        return Err(AppError::Internal);
-    }
-
-    let swap_data: serde_json::Value = swap_res.json().await.map_err(|e| {
-        tracing::error!("Jupiter swap response parse error: {e}");
-        AppError::Internal
-    })?;
-
-    let tx_base64 = swap_data
-        .get("swapTransaction")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| {
-            tracing::error!("Jupiter swap response missing swapTransaction field");
-            AppError::Internal
-        })?
-        .to_string();
+    // 1. Build the VersionedTransaction via Jupiter.
+    let tx_base64 = build_swap_transaction(&req.quote_raw, user_wallet, config).await?;
 
     // 2. MPC: sign and broadcast the transaction.
     let signature = forward_swap_sign(
         MpcSwapSignRequest {
-            user_id:             user_id.to_string(),
-            wallet_pubkey:       user_wallet.to_string(),
-            transaction_base64:  tx_base64,
+            user_id:            user_id.to_string(),
+            wallet_pubkey:      user_wallet.to_string(),
+            transaction_base64: tx_base64,
         },
         config,
     )

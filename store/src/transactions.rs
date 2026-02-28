@@ -187,3 +187,16 @@ pub async fn count_swap_transactions_by_user(
 
     Ok(row.count.unwrap_or(0))
 }
+
+pub async fn count_transactions_by_user(
+    user_id: Uuid,
+) -> Result<i64, sqlx::Error> {
+    let row = sqlx::query!(
+        "SELECT COUNT(*) AS count FROM transactions WHERE user_id = $1",
+        user_id,
+    )
+    .fetch_one(pool())
+    .await?;
+
+    Ok(row.count.unwrap_or(0))
+}

@@ -26,12 +26,16 @@ pub struct RefreshTokenRow{
   pub created_at: Option<DateTime<Utc>>
 }
 
+#[derive(sqlx::FromRow)]
 pub struct WalletKeyRow {
     pub id: Uuid,
     pub user_id: Uuid,
     pub pubkey: String,
-    pub shard_index: i32,
-    pub encrypted_share: String,
+    pub shard_index: Option<i32>,
+    pub encrypted_share: Option<String>,
+    /// AES-256-GCM encrypted ed25519 private key, hex-encoded.
+    /// Only the MPC server (which holds master_secret) can decrypt this.
+    pub encrypted_private_key: Option<String>,
     pub status: Option<String>,
     pub created_at: Option<DateTime<Utc>>,
     pub updated_at: Option<DateTime<Utc>>,

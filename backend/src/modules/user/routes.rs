@@ -1,24 +1,12 @@
-use actix_web::{HttpMessage, HttpRequest, HttpResponse, get, middleware::from_fn, web};
+use actix_web::{middleware::from_fn, web};
 
-use crate::{middlewares::auth_middleware, modules::JwtClaims, utils::{ AppError}};
-use super::handlers::*;
-
-#[get("/me")]
-pub async fn handle_get_current_user(req: HttpRequest) -> Result<HttpResponse, AppError> {
-  let token_claims = match req.extensions().get::<JwtClaims>().cloned() {
-    Some(t) => t,
-    None => {
-      return Err(AppError::Unauthorized("Invalid JWT token".to_string()))
-    }
-  };
-
-  get_user_profile(token_claims).await
-}
+use crate::middlewares::auth_middleware;
+use super::services::*;
 
 pub fn configure_user_routes(cfg: &mut web::ServiceConfig) {
-  cfg.service(
-    web::scope("user")
-      .wrap(from_fn(auth_middleware))
-      .service(handle_get_current_user)
-  );
+    cfg.service(
+        web::scope("user")
+            .wrap(from_fn(auth_middleware))
+            .service(handle_get_current_user),
+    );
 }

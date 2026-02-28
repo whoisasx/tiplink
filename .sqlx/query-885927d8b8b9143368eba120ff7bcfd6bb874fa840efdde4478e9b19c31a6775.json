@@ -1,0 +1,83 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO wallet_balances\n          (user_id, wallet_pubkey, mint, symbol, decimals, raw_amount, ui_amount, usd_value, last_synced_at)\n        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())\n        ON CONFLICT (wallet_pubkey, mint) DO UPDATE\n          SET raw_amount     = EXCLUDED.raw_amount,\n              ui_amount      = EXCLUDED.ui_amount,\n              usd_value      = EXCLUDED.usd_value,\n              last_synced_at = NOW()\n        RETURNING\n          id, user_id, wallet_pubkey, mint, symbol, decimals, raw_amount,\n          CAST(ui_amount  AS FLOAT8) AS ui_amount,\n          CAST(usd_value  AS FLOAT8) AS usd_value,\n          last_synced_at\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "user_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "wallet_pubkey",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "mint",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "symbol",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "decimals",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 6,
+        "name": "raw_amount",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 7,
+        "name": "ui_amount",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 8,
+        "name": "usd_value",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 9,
+        "name": "last_synced_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Text",
+        "Int4",
+        "Int8",
+        "Numeric",
+        "Numeric"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      null,
+      null,
+      true
+    ]
+  },
+  "hash": "885927d8b8b9143368eba120ff7bcfd6bb874fa840efdde4478e9b19c31a6775"
+}

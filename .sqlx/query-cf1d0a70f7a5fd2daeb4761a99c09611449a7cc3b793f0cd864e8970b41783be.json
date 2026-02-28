@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE payment_links\n        SET status = 'cancelled', updated_at = NOW()\n        WHERE id = $1 AND status = 'active'\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "cf1d0a70f7a5fd2daeb4761a99c09611449a7cc3b793f0cd864e8970b41783be"
+}

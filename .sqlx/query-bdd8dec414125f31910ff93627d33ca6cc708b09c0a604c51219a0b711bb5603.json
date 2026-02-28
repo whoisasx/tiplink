@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE payment_links\n        SET status        = 'claimed',\n            claimer_wallet = $1,\n            claimed_at    = NOW(),\n            updated_at    = NOW()\n        WHERE link_token = $2\n          AND status    = 'active'\n          AND (expiry_at IS NULL OR expiry_at > NOW())\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "bdd8dec414125f31910ff93627d33ca6cc708b09c0a604c51219a0b711bb5603"
+}

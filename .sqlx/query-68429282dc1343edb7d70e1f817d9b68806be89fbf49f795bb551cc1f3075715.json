@@ -1,0 +1,102 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO swap_quotes\n          (user_id, input_mint, output_mint, quoted_amount, slippage_bps,\n           price_impact_pct, route_plan, unsigned_tx, expires_at)\n        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)\n        RETURNING\n          id, user_id, input_mint, output_mint, quoted_amount, slippage_bps,\n          CAST(price_impact_pct AS FLOAT8) AS price_impact_pct,\n          route_plan AS \"route_plan: Value\",\n          unsigned_tx, expires_at, status, transaction_id, created_at\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "user_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "input_mint",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "output_mint",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "quoted_amount",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 5,
+        "name": "slippage_bps",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 6,
+        "name": "price_impact_pct",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 7,
+        "name": "route_plan: Value",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 8,
+        "name": "unsigned_tx",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 9,
+        "name": "expires_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 10,
+        "name": "status",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 11,
+        "name": "transaction_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 12,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Int8",
+        "Int4",
+        "Numeric",
+        "Jsonb",
+        "Text",
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      null,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "68429282dc1343edb7d70e1f817d9b68806be89fbf49f795bb551cc1f3075715"
+}

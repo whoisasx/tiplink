@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n    UPDATE users\n    SET wallet_pubkey = $1, updated_at = NOW()\n    WHERE id = $2\n    ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "decb64449d486427875d9504ad32bb6b18ce609e587e8e52987adcb1402afc22"
+}

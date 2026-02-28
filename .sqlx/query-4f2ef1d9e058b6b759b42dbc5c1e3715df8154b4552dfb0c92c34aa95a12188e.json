@@ -1,0 +1,77 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT\n          id, user_id, wallet_pubkey, mint, symbol, decimals, raw_amount,\n          CAST(ui_amount  AS FLOAT8) AS ui_amount,\n          CAST(usd_value  AS FLOAT8) AS usd_value,\n          last_synced_at\n        FROM wallet_balances\n        WHERE wallet_pubkey = $1 AND mint = $2\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "user_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "wallet_pubkey",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "mint",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "symbol",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "decimals",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 6,
+        "name": "raw_amount",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 7,
+        "name": "ui_amount",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 8,
+        "name": "usd_value",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 9,
+        "name": "last_synced_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      null,
+      null,
+      true
+    ]
+  },
+  "hash": "4f2ef1d9e058b6b759b42dbc5c1e3715df8154b4552dfb0c92c34aa95a12188e"
+}

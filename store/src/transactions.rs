@@ -147,3 +147,43 @@ pub async fn find_pending_transactions(
     .fetch_all(pool())
     .await
 }
+
+pub async fn find_swap_transactions_by_user(
+    user_id: Uuid,
+    limit: i64,
+    offset: i64,
+) -> Result<Vec<TransactionRow>, sqlx::Error> {
+    sqlx::query_as!(
+        TransactionRow,
+        r#"
+        SELECT
+          id, user_id, signature,
+          type AS txn_type,
+          status, amount, mint, from_address, to_address, fee,
+          metadata AS "metadata: Value",
+          confirmed_at, created_at, updated_at
+        FROM transactions
+        WHERE user_id = $1 AND type = 'swap'
+        ORDER BY created_at DESC
+        LIMIT $2 OFFSET $3
+        "#,
+        user_id,
+        limit,
+        offset,
+    )
+    .fetch_all(pool())
+    .await
+}
+
+pub async fn count_swap_transactions_by_user(
+    user_id: Uuid,
+) -> Result<i64, sqlx::Error> {
+    let row = sqlx::query!(
+        "SELECT COUNT(*) AS count FROM transactions WHERE user_id = $1 AND type = 'swap'",
+        user_id,
+    )
+    .fetch_one(pool())
+    .await?;
+
+    Ok(row.count.unwrap_or(0))
+}

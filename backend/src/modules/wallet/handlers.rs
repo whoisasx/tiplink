@@ -261,19 +261,6 @@ pub async fn send_transaction(
         Some(&info.mint)
     };
 
-    let signature = forward_transfer(
-        MpcTransferRequest {
-            from:   wallet_pubkey.to_string(),
-            to:     info.to_account.clone(),
-            amount,
-            mint:   mint_opt.map(|s| s.to_string()),
-            signer: MpcSigner::User { user_id: user_id.to_string() },
-            payer:  wallet_pubkey.to_string(),
-        },
-        config,
-    )
-    .await?;
-
     let txn_row = insert_transaction(
         user_id,
         "send",
@@ -289,6 +276,19 @@ pub async fn send_transaction(
         tracing::error!("insert_transaction (send) failed: {e}");
         AppError::Internal
     })?;
+
+    let signature = forward_transfer(
+        MpcTransferRequest {
+            from:   wallet_pubkey.to_string(),
+            to:     info.to_account.clone(),
+            amount,
+            mint:   mint_opt.map(|s| s.to_string()),
+            signer: MpcSigner::User { user_id: user_id.to_string() },
+            payer:  wallet_pubkey.to_string(),
+        },
+        config,
+    )
+    .await?;
 
     Ok(SendTransactionResponse {
         id:        txn_row.id.to_string(),

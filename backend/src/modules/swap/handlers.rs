@@ -42,19 +42,7 @@ pub async fn execute_swap(
     req:         SwapExecuteRequest,
     config:      &Config,
 ) -> Result<SwapExecuteResponse, AppError> {
-    // 1. Build the VersionedTransaction via Jupiter.
     let tx_base64 = build_swap_transaction(&req.quote_raw, user_wallet, config).await?;
-
-    // 2. MPC: sign and broadcast the transaction.
-    let signature = forward_swap_sign(
-        MpcSwapSignRequest {
-            user_id:            user_id.to_string(),
-            wallet_pubkey:      user_wallet.to_string(),
-            transaction_base64: tx_base64,
-        },
-        config,
-    )
-    .await?;
 
     let metadata = json!({
         "input_mint":    req.input_mint,
@@ -64,7 +52,6 @@ pub async fn execute_swap(
         "slippage_bps":  req.slippage_bps,
         "price_impact":  req.price_impact,
         "route_label":   req.route_label,
-        "signature":     signature,
     });
 
     let txn_row = insert_transaction(
@@ -82,6 +69,16 @@ pub async fn execute_swap(
         tracing::error!("insert_transaction (execute_swap) failed: {e}");
         AppError::Internal
     })?;
+
+    let signature = forward_swap_sign(
+        MpcSwapSignRequest {
+            user_id:            user_id.to_string(),
+            wallet_pubkey:      user_wallet.to_string(),
+            transaction_base64: tx_base64,
+        },
+        config,
+    )
+    .await?;
 
     Ok(SwapExecuteResponse {
         txn_id:    txn_row.id.to_string(),

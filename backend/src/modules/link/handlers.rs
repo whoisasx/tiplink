@@ -66,17 +66,6 @@ pub async fn create_link(
 ) -> Result<CreateLinkResponse, AppError> {
     let escrow = &config.escrow_public_key;
 
-    // mpc: POST {MPC_SERVER_URL}/transfer — user wallet → escrow, signed by user key shards
-    let signature = forward_transfer(MpcTransferRequest {
-        from:   creator_wallet.to_string(),
-        to:     escrow.clone(),
-        amount,
-        mint:   mint.map(String::from),
-        signer: MpcSigner::User { user_id: creator_id.to_string() },
-        payer:  creator_wallet.to_string(),
-    }, config)
-    .await?;
-
     let link_token = generate_link_token();
 
     let row = insert_payment_link(
@@ -103,13 +92,23 @@ pub async fn create_link(
         Some(creator_wallet),
         Some(escrow.as_str()),
         None,
-        Some(json!({ "link_id": row.id.to_string(), "link_token": link_token, "note": note, "signature": signature })),
+        Some(json!({ "link_id": row.id.to_string(), "link_token": link_token, "note": note })),
     )
     .await
     .map_err(|e| {
         tracing::error!("insert_transaction (create_link) failed: {e}");
         AppError::Internal
     })?;
+
+    let _signature = forward_transfer(MpcTransferRequest {
+        from:   creator_wallet.to_string(),
+        to:     escrow.clone(),
+        amount,
+        mint:   mint.map(String::from),
+        signer: MpcSigner::User { user_id: creator_id.to_string() },
+        payer:  creator_wallet.to_string(),
+    }, config)
+    .await?;
 
     Ok(CreateLinkResponse {
         link_id:       row.id.to_string(),
@@ -235,7 +234,22 @@ pub async fn claim_link(
 
     let escrow = &config.escrow_public_key;
 
-    // mpc: POST {MPC_SERVER_URL}/transfer — escrow → claimer_wallet, signed by escrow key (payer = escrow)
+    insert_transaction(
+        row.creator_id,
+        "receive",
+        row.amount,
+        row.mint.as_deref(),
+        Some(escrow.as_str()),
+        Some(claimer_wallet),
+        None,
+        Some(json!({ "link_id": row.id.to_string(), "link_token": link_token })),
+    )
+    .await
+    .map_err(|e| {
+        tracing::error!("insert_transaction (claim_link) failed: {e}");
+        AppError::Internal
+    })?;
+
     let signature = forward_transfer(MpcTransferRequest {
         from:   escrow.clone(),
         to:     claimer_wallet.to_string(),
@@ -258,22 +272,6 @@ pub async fn claim_link(
     }
 
     let claimed_at = Utc::now().to_rfc3339();
-
-    insert_transaction(
-        row.creator_id,
-        "receive",
-        row.amount,
-        row.mint.as_deref(),
-        Some(escrow.as_str()),
-        Some(claimer_wallet),
-        None,
-        Some(json!({ "link_id": row.id.to_string(), "link_token": link_token, "signature": signature })),
-    )
-    .await
-    .map_err(|e| {
-        tracing::error!("insert_transaction (claim_link) failed: {e}");
-        AppError::Internal
-    })?;
 
     Ok(ClaimLinkResponse {
         signature,
@@ -311,7 +309,22 @@ pub async fn cancel_link(
 
     let escrow = &config.escrow_public_key;
 
-    // mpc: POST {MPC_SERVER_URL}/transfer — escrow → creator_wallet (refund), signed by escrow key (payer = escrow)
+    insert_transaction(
+        user_id,
+        "receive",
+        row.amount,
+        row.mint.as_deref(),
+        Some(escrow.as_str()),
+        Some(creator_wallet),
+        None,
+        Some(json!({ "link_id": row.id.to_string(), "link_token": link_token, "action": "cancel" })),
+    )
+    .await
+    .map_err(|e| {
+        tracing::error!("insert_transaction (cancel_link) failed: {e}");
+        AppError::Internal
+    })?;
+
     let signature = forward_transfer(MpcTransferRequest {
         from:   escrow.clone(),
         to:     creator_wallet.to_string(),
@@ -334,22 +347,6 @@ pub async fn cancel_link(
             "Link could not be cancelled — it may have already changed state",
         )));
     }
-
-    insert_transaction(
-        user_id,
-        "receive",
-        row.amount,
-        row.mint.as_deref(),
-        Some(escrow.as_str()),
-        Some(creator_wallet),
-        None,
-        Some(json!({ "link_id": row.id.to_string(), "link_token": link_token, "action": "cancel", "signature": signature })),
-    )
-    .await
-    .map_err(|e| {
-        tracing::error!("insert_transaction (cancel_link) failed: {e}");
-        AppError::Internal
-    })?;
 
     Ok(CancelLinkResponse {
         signature,

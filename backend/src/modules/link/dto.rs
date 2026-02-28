@@ -1,7 +1,5 @@
 use serde::{Deserialize, Serialize};
 
-// ── Request DTOs ──────────────────────────────────────────────────────────────
-
 #[derive(Deserialize)]
 pub struct CreateLinkRequest {
     pub amount:    u64,
@@ -16,8 +14,6 @@ pub struct ClaimLinkRequest {
     pub claimer_wallet: String,
 }
 
-// ── Shared enums ──────────────────────────────────────────────────────────────
-
 #[derive(Serialize, Deserialize, Clone, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum LinkStatus {
@@ -25,7 +21,6 @@ pub enum LinkStatus {
     Claimed,
     Cancelled,
     Expired,
-    /// Used only as a query filter to return all statuses
     All,
 }
 
@@ -34,8 +29,6 @@ impl Default for LinkStatus {
         LinkStatus::All
     }
 }
-
-// ── Query DTOs ────────────────────────────────────────────────────────────────
 
 fn default_page()  -> u32 { 1 }
 fn default_limit() -> u32 { 20 }
@@ -49,8 +42,6 @@ pub struct MyLinksQuery {
     #[serde(default)]
     pub status: LinkStatus,
 }
-
-// ── Response DTOs ─────────────────────────────────────────────────────────────
 
 #[derive(Serialize)]
 pub struct CreateLinkResponse {

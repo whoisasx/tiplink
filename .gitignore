@@ -1,12 +1,31 @@
-/target
+# ── Rust ─────────────────────────────────────────────────────
+**/target/
 **/*.rs.bk
 Cargo.lock
 
-# Environment variables
+# sqlx offline query cache — MUST be committed
+# (keeps CI builds working without a live DB)
+!.sqlx/
+
+# cargo config (contains SQLX_OFFLINE flag) — commit it
+!.cargo/config.toml
+
+# ── Environment variables ─────────────────────────────────────
 .env
 .env.*
 !.env.example
 
-# OS files
+# ── IDE / editor ──────────────────────────────────────────────
+.idea/
+*.iml
+# Uncomment the next line to ignore VS Code settings workspace-wide
+# .vscode/
+
+# ── OS ────────────────────────────────────────────────────────
 .DS_Store
 Thumbs.db
+
+# ── Logs & tmp ────────────────────────────────────────────────
+*.log
+flycheck*/
+

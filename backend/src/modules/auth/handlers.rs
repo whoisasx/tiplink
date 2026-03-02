@@ -2,9 +2,10 @@ use chrono::{Duration, Utc};
 use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
-use std::env;
+use std::time::Duration as StdDuration;
 use uuid::Uuid;
 
+use crate::config::Config;
 use crate::modules::{JwtClaims, auth::dto::{GoogleOAuthTokenResponse, GoogleUserInfo, RefreshTokenRecord, UserRecord}};
 
 #[derive(Deserialize)]
@@ -30,16 +31,24 @@ pub async fn upsert_wallet(
     _token_info: &GoogleOAuthTokenResponse,
     user_info: &GoogleUserInfo,
     mpc_url: &str,
+    mpc_secret: &str,
 ) -> bool {
     let user = match store::users::find_user_by_google_sub(&user_info.id).await {
         Ok(Some(u)) => u,
         _ => return false,
     };
 
-    // mpc: wallet creation — POST {mpc_url}/wallet/create
-    // body: { user_id } → response: { pubkey }
-    let resp = match reqwest::Client::new()
+    let client = match reqwest::Client::builder()
+        .timeout(StdDuration::from_secs(10))
+        .build()
+    {
+        Ok(c) => c,
+        Err(_) => return false,
+    };
+
+    let resp = match client
         .post(format!("{}/wallet/create", mpc_url))
+        .header("X-MPC-Secret", mpc_secret)
         .json(&serde_json::json!({ "user_id": user.id.to_string() }))
         .send()
         .await
@@ -80,28 +89,21 @@ pub async fn upsert_refresh_token(
     }
 }
 
-pub fn create_jwt_token(mut claims: JwtClaims) -> String {
-    let secret = env::var("JWT_SECRET").unwrap_or_default();
-    let max_age: i64 = env::var("TOKEN_MAXAGE")
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(60 * 24 * 3600);
-
+pub fn create_jwt_token(mut claims: JwtClaims, config: &Config) -> Result<String, String> {
     claims.iat = Utc::now().timestamp();
-    claims.exp = Utc::now().timestamp() + max_age;
+    claims.exp = Utc::now().timestamp() + config.jwt_max_age;
 
     encode(
         &Header::default(),
         &claims,
-        &EncodingKey::from_secret(secret.as_bytes()),
+        &EncodingKey::from_secret(config.jwt_secret.as_bytes()),
     )
-    .unwrap_or_default()
+    .map_err(|e| e.to_string())
 }
 
-pub fn verify_jwt_token(token: String) -> Result<JwtClaims, String> {
-    let secret = env::var("JWT_SECRET").unwrap_or_default();
+pub fn verify_jwt_token(token: &str, secret: &str) -> Result<JwtClaims, String> {
     decode::<JwtClaims>(
-        &token,
+        token,
         &DecodingKey::from_secret(secret.as_bytes()),
         &Validation::default(),
     )

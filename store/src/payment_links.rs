@@ -109,6 +109,63 @@ pub async fn cancel_payment_link(id: Uuid) -> Result<bool, sqlx::Error> {
     Ok(result.rows_affected() > 0)
 }
 
+/// Cancel a link atomically, but only if the caller is the creator.
+/// Returns `false` if the link is not active, doesn't exist, or is owned by
+/// someone else — all three cases are safe no-ops.
+pub async fn cancel_payment_link_owned(id: Uuid, creator_id: Uuid) -> Result<bool, sqlx::Error> {
+    let result = sqlx::query!(
+        r#"
+        UPDATE payment_links
+        SET status = 'cancelled', updated_at = NOW()
+        WHERE id = $1 AND creator_id = $2 AND status = 'active'
+        "#,
+        id,
+        creator_id,
+    )
+    .execute(pool())
+    .await?;
+
+    Ok(result.rows_affected() > 0)
+}
+
+/// Revert a previously-claimed link back to 'active'.
+/// Used when the MPC transfer fails after the DB was already updated.
+pub async fn revert_claim_payment_link(link_token: &str) -> Result<bool, sqlx::Error> {
+    let result = sqlx::query!(
+        r#"
+        UPDATE payment_links
+        SET status        = 'active',
+            claimer_wallet = NULL,
+            claimed_at    = NULL,
+            updated_at    = NOW()
+        WHERE link_token = $1 AND status = 'claimed'
+        "#,
+        link_token,
+    )
+    .execute(pool())
+    .await?;
+
+    Ok(result.rows_affected() > 0)
+}
+
+/// Revert a previously-cancelled link back to 'active'.
+/// Used when the MPC refund transfer fails after the DB was already updated.
+pub async fn revert_cancel_payment_link(id: Uuid) -> Result<bool, sqlx::Error> {
+    let result = sqlx::query!(
+        r#"
+        UPDATE payment_links
+        SET status = 'active', updated_at = NOW()
+        WHERE id = $1 AND status = 'cancelled'
+        "#,
+        id,
+    )
+    .execute(pool())
+    .await?;
+
+    Ok(result.rows_affected() > 0)
+}
+
+
 pub async fn expire_stale_links() -> Result<u64, sqlx::Error> {
     let result = sqlx::query!(
         "UPDATE payment_links SET status = 'expired', updated_at = NOW() WHERE status = 'active' AND expiry_at IS NOT NULL AND expiry_at <= NOW()"

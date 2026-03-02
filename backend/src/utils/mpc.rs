@@ -2,6 +2,7 @@ use hex;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use std::time::Duration;
 
 use crate::config::Config;
 use super::AppError;
@@ -50,10 +51,14 @@ struct MpcSwapSignResponse {
 }
 
 pub async fn forward_swap_sign(req: MpcSwapSignRequest, config: &Config) -> Result<String, AppError> {
-    let client = Client::new();
+    let client = Client::builder()
+        .timeout(Duration::from_secs(10))
+        .build()
+        .unwrap_or_default();
 
     let res = client
         .post(format!("{}/sign-and-send", config.mpc_server_url))
+        .header("X-MPC-Secret", &config.mpc_secret)
         .json(&req)
         .send()
         .await
@@ -92,10 +97,14 @@ pub async fn forward_transfer(req: MpcTransferRequest, config: &Config) -> Resul
         }
     }
 
-    let client = Client::new();
+    let client = Client::builder()
+        .timeout(Duration::from_secs(10))
+        .build()
+        .unwrap_or_default();
 
     let res = client
         .post(format!("{}/transfer", mpc_url))
+        .header("X-MPC-Secret", &config.mpc_secret)
         .json(&body)
         .send()
         .await

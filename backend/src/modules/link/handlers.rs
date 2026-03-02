@@ -4,8 +4,9 @@ use uuid::Uuid;
 
 use store::{
     payment_links::{
-        cancel_payment_link, claim_payment_link, find_payment_link_by_token,
+        cancel_payment_link_owned, claim_payment_link, find_payment_link_by_token,
         find_payment_links_by_creator, insert_payment_link,
+        revert_cancel_payment_link, revert_claim_payment_link,
     },
     transactions::{insert_transaction, update_transaction_signature},
 };
@@ -222,6 +223,8 @@ pub async fn claim_link(
     claimer_wallet: &str,
     config: &Config,
 ) -> Result<ClaimLinkResponse, AppError> {
+    // Read link data (amount, mint, etc.) – still needed for the MPC call
+    // even though the atomic UPDATE below is the authoritative gate.
     let row = find_payment_link_by_token(link_token)
         .await
         .map_err(|e| {
@@ -230,11 +233,24 @@ pub async fn claim_link(
         })?
         .ok_or_else(|| AppError::_NotFound(String::from("Link not found")))?;
 
-    match resolve_status(row.status.as_deref(), row.expiry_at) {
-        LinkStatus::Claimed   => return Err(AppError::_Conflict(String::from("Link already claimed"))),
-        LinkStatus::Cancelled => return Err(AppError::_Conflict(String::from("Link has been cancelled"))),
-        LinkStatus::Expired   => return Err(AppError::_Conflict(String::from("Link has expired"))),
-        LinkStatus::Active | LinkStatus::All => {}
+    // Atomically mark the link as claimed BEFORE touching the blockchain.
+    // `claim_payment_link` uses WHERE status='active' AND expiry > NOW(), so
+    // only one concurrent request can win; all others see rows_affected = 0.
+    let claimed = claim_payment_link(link_token, claimer_wallet)
+        .await
+        .map_err(|e| {
+            tracing::error!("claim_payment_link (atomic) failed: {e}");
+            AppError::Internal
+        })?;
+
+    if !claimed {
+        // Surface the most helpful error based on what we read earlier.
+        return match resolve_status(row.status.as_deref(), row.expiry_at) {
+            LinkStatus::Claimed   => Err(AppError::_Conflict(String::from("Link already claimed"))),
+            LinkStatus::Cancelled => Err(AppError::_Conflict(String::from("Link has been cancelled"))),
+            LinkStatus::Expired   => Err(AppError::_Conflict(String::from("Link has expired"))),
+            _                     => Err(AppError::_Conflict(String::from("Link is no longer available"))),
+        };
     }
 
     let escrow = &config.escrow_public_key;
@@ -255,40 +271,38 @@ pub async fn claim_link(
         AppError::Internal
     })?;
 
-    let signature = forward_transfer(MpcTransferRequest {
+    // Execute the on-chain transfer. On failure, roll back the DB claim so
+    // the link stays claimable rather than being stuck with no on-chain tx.
+    let signature = match forward_transfer(MpcTransferRequest {
         from:   escrow.clone(),
         to:     claimer_wallet.to_string(),
         amount: row.amount,
         mint:   row.mint.clone(),
         signer: MpcSigner::Escrow,
         payer:  escrow.clone(),
-    }, config)
-    .await?;
+    }, config).await {
+        Ok(sig) => sig,
+        Err(e) => {
+            if let Err(rv) = revert_claim_payment_link(link_token).await {
+                tracing::error!(
+                    "CRITICAL: MPC failed AND revert_claim failed for {link_token}: {rv}"
+                );
+            }
+            return Err(e);
+        }
+    };
 
     update_transaction_signature(txn_row.id, &signature)
         .await
         .map_err(|e| tracing::error!("update_transaction_signature (claim_link) failed: {e}"))
         .ok();
 
-    let updated = claim_payment_link(link_token, claimer_wallet)
-        .await
-        .map_err(|e| {
-            tracing::error!("claim_payment_link failed: {e}");
-            AppError::Internal
-        })?;
-
-    if !updated {
-        return Err(AppError::_Conflict(String::from("Link was already claimed or expired")));
-    }
-
-    let claimed_at = Utc::now().to_rfc3339();
-
     Ok(ClaimLinkResponse {
         signature,
         amount:         row.amount as u64,
         mint:           row.mint,
         claimer_wallet: claimer_wallet.to_string(),
-        claimed_at,
+        claimed_at:     Utc::now().to_rfc3339(),
     })
 }
 
@@ -310,11 +324,27 @@ pub async fn cancel_link(
         return Err(AppError::_Forbidden);
     }
 
+    // Early status check for a better error message (non-authoritative).
     match resolve_status(row.status.as_deref(), row.expiry_at) {
         LinkStatus::Claimed   => return Err(AppError::_Conflict(String::from("Link already claimed"))),
         LinkStatus::Cancelled => return Err(AppError::_Conflict(String::from("Link already cancelled"))),
         LinkStatus::Expired   => return Err(AppError::_Conflict(String::from("Link has expired"))),
         LinkStatus::Active | LinkStatus::All => {}
+    }
+
+    // Atomically cancel (re-checks creator_id and status='active' at DB level)
+    // before any on-chain operation.
+    let cancelled = cancel_payment_link_owned(row.id, user_id)
+        .await
+        .map_err(|e| {
+            tracing::error!("cancel_payment_link_owned failed: {e}");
+            AppError::Internal
+        })?;
+
+    if !cancelled {
+        return Err(AppError::_Conflict(String::from(
+            "Link could not be cancelled — it may have already changed state",
+        )));
     }
 
     let escrow = &config.escrow_public_key;
@@ -335,33 +365,29 @@ pub async fn cancel_link(
         AppError::Internal
     })?;
 
-    let signature = forward_transfer(MpcTransferRequest {
+    let signature = match forward_transfer(MpcTransferRequest {
         from:   escrow.clone(),
         to:     creator_wallet.to_string(),
         amount: row.amount,
         mint:   row.mint.clone(),
         signer: MpcSigner::Escrow,
         payer:  escrow.clone(),
-    }, config)
-    .await?;
+    }, config).await {
+        Ok(sig) => sig,
+        Err(e) => {
+            if let Err(rv) = revert_cancel_payment_link(row.id).await {
+                tracing::error!(
+                    "CRITICAL: MPC failed AND revert_cancel failed for {link_token}: {rv}"
+                );
+            }
+            return Err(e);
+        }
+    };
 
     update_transaction_signature(txn_row.id, &signature)
         .await
         .map_err(|e| tracing::error!("update_transaction_signature (cancel_link) failed: {e}"))
         .ok();
-
-    let updated = cancel_payment_link(row.id)
-        .await
-        .map_err(|e| {
-            tracing::error!("cancel_payment_link failed: {e}");
-            AppError::Internal
-        })?;
-
-    if !updated {
-        return Err(AppError::_Conflict(String::from(
-            "Link could not be cancelled — it may have already changed state",
-        )));
-    }
 
     Ok(CancelLinkResponse {
         signature,

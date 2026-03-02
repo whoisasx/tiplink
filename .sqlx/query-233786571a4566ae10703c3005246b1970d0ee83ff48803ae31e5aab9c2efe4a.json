@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE payment_links\n        SET status        = 'active',\n            claimer_wallet = NULL,\n            claimed_at    = NULL,\n            updated_at    = NOW()\n        WHERE link_token = $1 AND status = 'claimed'\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "233786571a4566ae10703c3005246b1970d0ee83ff48803ae31e5aab9c2efe4a"
+}

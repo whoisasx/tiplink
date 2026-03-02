@@ -1,7 +1,9 @@
-use actix_web::{App, HttpResponse, HttpServer, Responder, get};
+use actix_web::{web, App, HttpResponse, HttpServer, Responder, get};
 use store::{create_db_pool, init_pool};
 
+mod config;
 pub mod webhooks;
+use config::Config;
 use webhooks::*;
 
 #[get("/")]
@@ -14,27 +16,19 @@ async fn main() -> std::io::Result<()> {
     dotenv::dotenv().ok();
 
     tracing_subscriber::fmt()
-        .with_env_filter(
-            std::env::var("RUST_LOG").unwrap_or_else(|_| "info".into()),
-        )
+        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .init();
 
-    let database_url =
-        std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+    let config = Config::init();
 
-    let port: u16 = std::env::var("INDEXER_PORT")
-        .unwrap_or_else(|_| "8080".to_string())
-        .parse()
-        .expect("INDEXER_PORT must be a valid port number");
-
-    let raw_pool = create_db_pool(&database_url).await;
+    let raw_pool = create_db_pool(&config.database_url).await;
     init_pool(raw_pool);
 
-    let solana_rpc_url = std::env::var("SOLANA_RPC_URL")
-        .expect("SOLANA_RPC_URL must be set");
-    let rpc_url = actix_web::web::Data::new(solana_rpc_url);
+    let rpc_url = web::Data::new(config.solana_rpc_url.clone());
+    let host    = config.host.clone();
+    let port    = config.port;
 
-    tracing::info!(port, "indexer listening");
+    tracing::info!(host = %host, port, "indexer listening");
 
     HttpServer::new(move || {
         App::new()
@@ -42,7 +36,7 @@ async fn main() -> std::io::Result<()> {
             .service(health)
             .service(handle_hooks)
     })
-    .bind(("0.0.0.0", port))?
+    .bind((host.as_str(), port))?
     .run()
     .await
 }

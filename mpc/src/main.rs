@@ -6,6 +6,7 @@ mod config;
 mod dto;
 mod errors;
 mod handlers;
+mod middlewares;
 mod routes;
 mod services;
 
@@ -23,10 +24,11 @@ async fn main() -> std::io::Result<()> {
     let raw_pool = store::create_db_pool(&config.database_url).await;
     store::init_pool(raw_pool);
 
+    let host  = config.host.clone();
     let port   = config.port;
     let config = web::Data::new(config);
 
-    tracing::info!("MPC server starting on port {port}");
+    tracing::info!("MPC server starting on {host}:{port}");
 
     HttpServer::new(move || {
         let cors = Cors::permissive(); 
@@ -36,7 +38,7 @@ async fn main() -> std::io::Result<()> {
             .app_data(config.clone())
             .configure(routes::configure_routes)
     })
-    .bind(("0.0.0.0", port))?
+    .bind((host.as_str(), port))?
     .run()
     .await
 }

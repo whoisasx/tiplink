@@ -1,5 +1,6 @@
 use actix_web::{Error, HttpRequest, HttpResponse, cookie::Cookie, delete, get, web};
-use chrono::Utc;
+use chrono::{Duration, Utc};
+use uuid::Uuid;
 use crate::{
     config::Config,
     modules::JwtClaims,
@@ -81,7 +82,7 @@ pub async fn handle_google_callback(
             .finish());
     }
 
-    if !upsert_wallet(&token_info, &user_info, &config.mpc_server_url).await {
+    if !upsert_wallet(&token_info, &user_info, &config.mpc_server_url, &config.mpc_secret).await {
         return Ok(HttpResponse::Found()
             .append_header(("Location", config.client_origin.clone()))
             .cookie(Cookie::build("auth_status", "error").path("/").http_only(false).finish())
@@ -97,7 +98,7 @@ pub async fn handle_google_callback(
 }
 
 #[get("/refresh")]
-pub async fn handle_token_refresh(req: HttpRequest) -> Result<HttpResponse, AppError> {
+pub async fn handle_token_refresh(req: HttpRequest, config: web::Data<Config>) -> Result<HttpResponse, AppError> {
     let refresh_token = match req.cookie("refresh_token") {
         Some(r) => r.value().to_string(),
         None => return Err(AppError::Unauthorized("Refresh token not provided".to_string())),
@@ -159,38 +160,74 @@ pub async fn handle_token_refresh(req: HttpRequest) -> Result<HttpResponse, AppE
         }
     };
 
-    let jwt_token = create_jwt_token(JwtClaims::new(
-        user_record.id,
-        user_record.email,
-        match user_record.wallet {
-            Some(w) => w,
-            None => return Ok(HttpResponse::ServiceUnavailable()
-                .cookie(
-                    Cookie::build("refresh_token", "")
-                        .path("/")
-                        .max_age(actix_web::cookie::time::Duration::seconds(0))
-                        .finish(),
-                )
-                .json(ApiResponse::<String> {
-                    success: false,
-                    message: "Wallet not ready yet.".to_string(),
-                    result: None,
-                    error: Some("Wallet not ready yet.".to_string()),
-                })),
-        },
-    ));
+    let wallet = match user_record.wallet {
+        Some(w) => w,
+        None => return Ok(HttpResponse::ServiceUnavailable()
+            .cookie(
+                Cookie::build("refresh_token", "")
+                    .path("/")
+                    .max_age(actix_web::cookie::time::Duration::seconds(0))
+                    .finish(),
+            )
+            .json(ApiResponse::<String> {
+                success: false,
+                message: "Wallet not ready yet.".to_string(),
+                result: None,
+                error: Some("Wallet not ready yet.".to_string()),
+            })),
+    };
 
-    Ok(ApiResponse::ok("JWT token refreshed", json!({ "jwt_token": jwt_token })))
+    let jwt_token = create_jwt_token(
+        JwtClaims::new(user_record.id.clone(), user_record.email, wallet),
+        &config,
+    ).map_err(|e| {
+        tracing::error!("JWT encoding failed: {e}");
+        AppError::Internal
+    })?;
+
+    // Rotate the refresh token: revoke the old one, issue a fresh one.
+    let _ = store::users::revoke_refresh_token(&hashed_token).await;
+    let new_raw_token  = Uuid::new_v4().to_string();
+    let new_token_hash = hash_refresh_token(&new_raw_token);
+    let new_expires_at = Utc::now() + Duration::days(180);
+    if let Ok(user_uuid) = Uuid::parse_str(&user_record.id) {
+        let _ = store::users::insert_refresh_token(
+            user_uuid, &new_token_hash, new_expires_at, None, None,
+        ).await;
+    }
+
+    Ok(HttpResponse::Ok()
+        .cookie(
+            Cookie::build("refresh_token", new_raw_token)
+                .path("/")
+                .http_only(true)
+                .finish(),
+        )
+        .json(json!({
+            "success": true,
+            "message": "JWT token refreshed",
+            "result": { "jwt_token": jwt_token },
+            "error": null
+        })))
 }
 
 #[delete("/logout")]
-pub async fn handle_logout() -> Result<HttpResponse, AppError> {
+pub async fn handle_logout(req: HttpRequest) -> Result<HttpResponse, AppError> {
+    // Revoke the refresh token in the DB so it can't be replayed.
+    if let Some(cookie) = req.cookie("refresh_token") {
+        let hashed = hash_refresh_token(cookie.value());
+        if let Err(e) = store::users::revoke_refresh_token(&hashed).await {
+            tracing::warn!("Failed to revoke refresh token on logout: {e}");
+        }
+    }
+
     Ok(HttpResponse::Ok()
         .cookie(
             Cookie::build("refresh_token", "")
                 .path("/")
+                .http_only(true)
                 .max_age(actix_web::cookie::time::Duration::seconds(0))
                 .finish(),
         )
-        .json(json!({ "status": "user logged out." })))
+        .json(json!({ "success": true, "message": "User logged out." })))
 }

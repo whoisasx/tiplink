@@ -6,8 +6,7 @@ use store::{
         count_transactions_by_user,
         find_transaction_by_id,
         find_transactions_by_user,
-        insert_transaction,
-    },
+        insert_transaction,        update_transaction_signature,    },
 };
 
 use crate::{
@@ -289,6 +288,11 @@ pub async fn send_transaction(
         config,
     )
     .await?;
+
+    update_transaction_signature(txn_row.id, &signature)
+        .await
+        .map_err(|e| tracing::error!("update_transaction_signature (send) failed: {e}"))
+        .ok();
 
     Ok(SendTransactionResponse {
         id:        txn_row.id.to_string(),

@@ -2,7 +2,7 @@ use chrono::Utc;
 use uuid::Uuid;
 use serde_json::json;
 
-use store::transactions::{find_swap_transactions_by_user, count_swap_transactions_by_user, insert_transaction};
+use store::transactions::{find_swap_transactions_by_user, count_swap_transactions_by_user, insert_transaction, update_transaction_signature};
 
 use crate::{
     config::Config,
@@ -79,6 +79,11 @@ pub async fn execute_swap(
         config,
     )
     .await?;
+
+    update_transaction_signature(txn_row.id, &signature)
+        .await
+        .map_err(|e| tracing::error!("update_transaction_signature (swap) failed: {e}"))
+        .ok();
 
     Ok(SwapExecuteResponse {
         txn_id:    txn_row.id.to_string(),

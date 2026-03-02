@@ -7,7 +7,7 @@ use store::{
         cancel_payment_link, claim_payment_link, find_payment_link_by_token,
         find_payment_links_by_creator, insert_payment_link,
     },
-    transactions::insert_transaction,
+    transactions::{insert_transaction, update_transaction_signature},
 };
 
 use crate::{config::Config, utils::{forward_transfer, AppError, MpcSigner, MpcTransferRequest}};
@@ -84,7 +84,7 @@ pub async fn create_link(
         AppError::Internal
     })?;
 
-    insert_transaction(
+    let txn_row = insert_transaction(
         creator_id,
         "send",
         amount,
@@ -100,7 +100,7 @@ pub async fn create_link(
         AppError::Internal
     })?;
 
-    let _signature = forward_transfer(MpcTransferRequest {
+    let signature = forward_transfer(MpcTransferRequest {
         from:   creator_wallet.to_string(),
         to:     escrow.clone(),
         amount,
@@ -109,6 +109,11 @@ pub async fn create_link(
         payer:  creator_wallet.to_string(),
     }, config)
     .await?;
+
+    update_transaction_signature(txn_row.id, &signature)
+        .await
+        .map_err(|e| tracing::error!("update_transaction_signature (create_link) failed: {e}"))
+        .ok();
 
     Ok(CreateLinkResponse {
         link_id:       row.id.to_string(),
@@ -234,7 +239,7 @@ pub async fn claim_link(
 
     let escrow = &config.escrow_public_key;
 
-    insert_transaction(
+    let txn_row = insert_transaction(
         row.creator_id,
         "receive",
         row.amount,
@@ -259,6 +264,11 @@ pub async fn claim_link(
         payer:  escrow.clone(),
     }, config)
     .await?;
+
+    update_transaction_signature(txn_row.id, &signature)
+        .await
+        .map_err(|e| tracing::error!("update_transaction_signature (claim_link) failed: {e}"))
+        .ok();
 
     let updated = claim_payment_link(link_token, claimer_wallet)
         .await
@@ -309,7 +319,7 @@ pub async fn cancel_link(
 
     let escrow = &config.escrow_public_key;
 
-    insert_transaction(
+    let txn_row = insert_transaction(
         user_id,
         "receive",
         row.amount,
@@ -334,6 +344,11 @@ pub async fn cancel_link(
         payer:  escrow.clone(),
     }, config)
     .await?;
+
+    update_transaction_signature(txn_row.id, &signature)
+        .await
+        .map_err(|e| tracing::error!("update_transaction_signature (cancel_link) failed: {e}"))
+        .ok();
 
     let updated = cancel_payment_link(row.id)
         .await

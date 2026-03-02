@@ -39,6 +39,25 @@ pub async fn insert_transaction(
     .await
 }
 
+pub async fn find_transaction_by_signature(
+    signature: &str,
+) -> Result<Option<TransactionRow>, sqlx::Error> {
+    sqlx::query_as::<_, TransactionRow>(
+        r#"
+        SELECT
+          id, user_id, signature,
+          type AS txn_type,
+          status, amount, mint, from_address, to_address, fee,
+          metadata, confirmed_at, created_at, updated_at
+        FROM transactions
+        WHERE signature = $1
+        "#,
+    )
+    .bind(signature)
+    .fetch_optional(pool())
+    .await
+}
+
 pub async fn find_transaction_by_id(
     id: Uuid,
 ) -> Result<Option<TransactionRow>, sqlx::Error> {
@@ -85,6 +104,21 @@ pub async fn find_transactions_by_user(
     )
     .fetch_all(pool())
     .await
+}
+
+pub async fn update_transaction_signature(
+    id: Uuid,
+    signature: &str,
+) -> Result<bool, sqlx::Error> {
+    let result = sqlx::query!(
+        "UPDATE transactions SET signature = $1, updated_at = NOW() WHERE id = $2",
+        signature,
+        id,
+    )
+    .execute(pool())
+    .await?;
+
+    Ok(result.rows_affected() > 0)
 }
 
 pub async fn update_transaction_status(

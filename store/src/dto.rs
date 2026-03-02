@@ -41,6 +41,7 @@ pub struct WalletKeyRow {
     pub updated_at: Option<DateTime<Utc>>,
 }
 
+#[derive(sqlx::FromRow)]
 pub struct TransactionRow {
     pub id: Uuid,
     pub user_id: Uuid,

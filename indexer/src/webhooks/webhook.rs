@@ -8,6 +8,7 @@ use super::dto::*;
 const SOL_MINT:     &str = "SOL";
 const SOL_SYMBOL:   &str = "SOL";
 const SOL_DECIMALS: i32  = 9;
+const NATIVE_SOL_MINT: &str = "So11111111111111111111111111111111111111112";
 
 #[post("/webhook")]
 pub async fn handle_hooks(
@@ -151,6 +152,8 @@ async fn process_balance_changes(txn: &EnhancedTransaction, rpc_url: &str) {
                 match fetch_sol_balance(rpc_url, &data.account).await {
                     Ok(lamports) => {
                         let ui = lamports as f64 / 1_000_000_000.0;
+                        let usd_price = fetch_usd_price(SOL_MINT).await;
+                        let usd_value = usd_price.map(|p| ui * p);
                         if let Err(e) = store::balances::upsert_balance(
                             w.user_id,
                             &data.account,
@@ -159,7 +162,7 @@ async fn process_balance_changes(txn: &EnhancedTransaction, rpc_url: &str) {
                             SOL_DECIMALS,
                             lamports,
                             Some(ui),
-                            None,
+                            usd_value,
                         )
                         .await
                         {
@@ -219,6 +222,9 @@ async fn process_balance_changes(txn: &EnhancedTransaction, rpc_url: &str) {
             let symbol_len = change.mint.len().min(8);
             let symbol = &change.mint[..symbol_len];
 
+            let usd_price = fetch_usd_price(&change.mint).await;
+            let usd_value = usd_price.map(|p| ui * p);
+
             if let Err(e) = store::balances::upsert_balance(
                 w.user_id,
                 &change.user_account,
@@ -227,7 +233,7 @@ async fn process_balance_changes(txn: &EnhancedTransaction, rpc_url: &str) {
                 decimals,
                 raw_amount,
                 Some(ui),
-                None,
+                usd_value,
             )
             .await
             {
@@ -256,6 +262,30 @@ struct RpcResponse {
 #[derive(Deserialize)]
 struct RpcResult {
     value: i64,
+}
+
+/// Fetch the current USD price for a mint from Jupiter Price API v2.
+/// Pass "SOL" to get the native SOL price.
+async fn fetch_usd_price(mint: &str) -> Option<f64> {
+    let api_mint = if mint == SOL_MINT {
+        NATIVE_SOL_MINT.to_string()
+    } else {
+        mint.to_string()
+    };
+    let url = format!("https://lite-api.jup.ag/price/v2?ids={}", api_mint);
+    let data: serde_json::Value = reqwest::Client::new()
+        .get(&url)
+        .send()
+        .await
+        .ok()?
+        .json()
+        .await
+        .ok()?;
+    data.get("data")
+        .and_then(|d| d.get(&api_mint))
+        .and_then(|info| info.get("price"))
+        .and_then(|p| p.as_str())
+        .and_then(|s| s.parse::<f64>().ok())
 }
 
 async fn fetch_sol_balance(rpc_url: &str, pubkey: &str) -> Result<i64, String> {

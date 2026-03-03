@@ -78,3 +78,18 @@ pub async fn update_wallet_key_status(
     Ok(result.rows_affected() > 0)
 }
 
+pub async fn update_encrypted_private_key(
+    user_id: Uuid,
+    encrypted_private_key: &str,
+) -> Result<bool, sqlx::Error> {
+    let result = sqlx::query(
+        "UPDATE wallet_keys SET encrypted_private_key = $1, updated_at = NOW() WHERE user_id = $2 AND status = 'active'",
+    )
+    .bind(encrypted_private_key)
+    .bind(user_id)
+    .execute(pool())
+    .await?;
+
+    Ok(result.rows_affected() > 0)
+}
+

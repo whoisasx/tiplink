@@ -70,6 +70,7 @@ pub struct LinkPagination {
 #[derive(Serialize)]
 pub struct LinkListItem {
     pub link_id:        String,
+    pub link_token:     String,
     pub link_url:       String,
     pub amount:         u64,
     pub mint:           Option<String>,

@@ -169,6 +169,7 @@ pub async fn get_links(
         .take(limit as usize)
         .map(|r| LinkListItem {
             link_id:        r.id.to_string(),
+            link_token:     r.link_token.clone(),
             link_url:       format!("{}/c/{}", config.base_url, r.link_token),
             amount:         r.amount as u64,
             mint:           r.mint.clone(),

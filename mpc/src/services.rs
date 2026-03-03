@@ -174,10 +174,20 @@ pub async fn execute_transfer(req: TransferRequest, config: &Config) -> Result<S
                     MpcError::Internal
                 })?
                 .ok_or_else(|| MpcError::KeyNotFound(user_id.clone()))?;
-            let enc = row.encrypted_private_key.ok_or_else(|| {
-                MpcError::KeyNotFound(format!("No encrypted_private_key for user {user_id}"))
-            })?;
-            load_keypair_from_enc(&enc, &config.master_secret, user_id)?
+
+            match row.encrypted_private_key {
+                Some(enc) => load_keypair_from_enc(&enc, &config.master_secret, user_id)?,
+                None => {
+                    // Legacy wallet (pre migration-07): derive deterministically and backfill
+                    tracing::warn!(user_id, "encrypted_private_key is null — deriving from master secret and backfilling");
+                    let kp  = derive_keypair(&config.master_secret, user_id);
+                    let enc = encrypt_privkey(&kp.to_bytes(), &config.master_secret, user_id)?;
+                    if let Err(e) = store::wallet_keys::update_encrypted_private_key(uid, &enc).await {
+                        tracing::error!("backfill encrypted_private_key failed: {e}");
+                    }
+                    kp
+                }
+            }
         }
         SignerInfo::Escrow => {
             let bytes = bs58::decode(&config.escrow_private_key)
@@ -284,10 +294,18 @@ pub async fn sign_and_send(req: SignAndSendRequest, config: &Config) -> Result<S
         })?
         .ok_or_else(|| MpcError::KeyNotFound(req.user_id.clone()))?;
 
-    let enc = row.encrypted_private_key.ok_or_else(|| {
-        MpcError::KeyNotFound(format!("No encrypted_private_key for user {}", req.user_id))
-    })?;
-    let keypair = load_keypair_from_enc(&enc, &config.master_secret, &req.user_id)?;
+    let keypair = match row.encrypted_private_key {
+        Some(enc) => load_keypair_from_enc(&enc, &config.master_secret, &req.user_id)?,
+        None => {
+            tracing::warn!(user_id = %req.user_id, "encrypted_private_key is null in sign_and_send — deriving and backfilling");
+            let kp  = derive_keypair(&config.master_secret, &req.user_id);
+            let enc = encrypt_privkey(&kp.to_bytes(), &config.master_secret, &req.user_id)?;
+            if let Err(e) = store::wallet_keys::update_encrypted_private_key(uid, &enc).await {
+                tracing::error!("backfill encrypted_private_key failed: {e}");
+            }
+            kp
+        }
+    };
 
     if keypair.pubkey().to_string() != req.wallet_pubkey {
         return Err(MpcError::Unauthorized);

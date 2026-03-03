@@ -52,7 +52,7 @@ struct MpcSwapSignResponse {
 
 pub async fn forward_swap_sign(req: MpcSwapSignRequest, config: &Config) -> Result<String, AppError> {
     let client = Client::builder()
-        .timeout(Duration::from_secs(10))
+        .timeout(Duration::from_secs(90)) // devnet confirmation can take 30-60s
         .build()
         .unwrap_or_default();
 
@@ -70,8 +70,12 @@ pub async fn forward_swap_sign(req: MpcSwapSignRequest, config: &Config) -> Resu
     if !res.status().is_success() {
         let status = res.status();
         let body = res.text().await.unwrap_or_default();
-        tracing::error!("MPC sign-and-send returned {status}: {body}");
-        return Err(AppError::Internal);
+        tracing::error!("MPC /sign-and-send returned {status}: {body}");
+        let msg = serde_json::from_str::<serde_json::Value>(&body)
+            .ok()
+            .and_then(|v| v.get("message").and_then(|m| m.as_str()).map(String::from))
+            .unwrap_or_else(|| format!("MPC error {status}"));
+        return Err(AppError::BadRequest(msg));
     }
 
     let parsed: MpcSwapSignResponse = res.json().await.map_err(|e| {
@@ -98,7 +102,7 @@ pub async fn forward_transfer(req: MpcTransferRequest, config: &Config) -> Resul
     }
 
     let client = Client::builder()
-        .timeout(Duration::from_secs(10))
+        .timeout(Duration::from_secs(90)) // devnet send_and_confirm can take 30-60s
         .build()
         .unwrap_or_default();
 
@@ -116,8 +120,13 @@ pub async fn forward_transfer(req: MpcTransferRequest, config: &Config) -> Resul
     if !res.status().is_success() {
         let status = res.status();
         let body = res.text().await.unwrap_or_default();
-        tracing::error!("MPC returned {status}: {body}");
-        return Err(AppError::Internal);
+        tracing::error!("MPC /transfer returned {status}: {body}");
+        // Surface the MPC message to the caller so the frontend sees it
+        let msg = serde_json::from_str::<serde_json::Value>(&body)
+            .ok()
+            .and_then(|v| v.get("message").and_then(|m| m.as_str()).map(String::from))
+            .unwrap_or_else(|| format!("MPC error {status}"));
+        return Err(AppError::BadRequest(msg));
     }
 
     let parsed: MpcTransferResponse = res.json().await.map_err(|e| {

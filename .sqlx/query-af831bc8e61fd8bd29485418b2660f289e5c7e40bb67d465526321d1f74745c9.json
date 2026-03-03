@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT * FROM refresh_tokens WHERE token_hash = $1 AND revoked = FALSE",
+  "query": "SELECT * FROM refresh_tokens WHERE token_hash = $1",
   "describe": {
     "columns": [
       {
@@ -66,5 +66,5 @@
       true
     ]
   },
-  "hash": "f33e8e34a47f1c708519cedca6e31ffb0579060e4726d320dccfccfc0921f1d2"
+  "hash": "af831bc8e61fd8bd29485418b2660f289e5c7e40bb67d465526321d1f74745c9"
 }

@@ -82,7 +82,14 @@ pub async fn handle_google_callback(
             .finish());
     }
 
-    if !upsert_wallet(&token_info, &user_info, &config.mpc_server_url, &config.mpc_secret).await {
+    if !upsert_wallet(
+        &token_info,
+        &user_info,
+        &config.mpc_server_url,
+        &config.mpc_secret,
+        config.helius_api_key.as_deref(),
+        config.helius_webhook_id.as_deref(),
+    ).await {
         return Ok(HttpResponse::Found()
             .append_header(("Location", config.client_origin.clone()))
             .cookie(Cookie::build("auth_status", "error").path("/").http_only(false).finish())
@@ -162,13 +169,10 @@ pub async fn handle_token_refresh(req: HttpRequest, config: web::Data<Config>) -
 
     let wallet = match user_record.wallet {
         Some(w) => w,
+        // Wallet isn't ready yet (MPC provisioning lag). Return 503 so the
+        // client can retry, but do NOT clear the refresh_token cookie — the
+        // token is still valid and should not be invalidated.
         None => return Ok(HttpResponse::ServiceUnavailable()
-            .cookie(
-                Cookie::build("refresh_token", "")
-                    .path("/")
-                    .max_age(actix_web::cookie::time::Duration::seconds(0))
-                    .finish(),
-            )
             .json(ApiResponse::<String> {
                 success: false,
                 message: "Wallet not ready yet.".to_string(),
@@ -185,20 +189,26 @@ pub async fn handle_token_refresh(req: HttpRequest, config: web::Data<Config>) -
         AppError::Internal
     })?;
 
-    // Rotate the refresh token: revoke the old one, issue a fresh one.
-    let _ = store::users::revoke_refresh_token(&hashed_token).await;
-    let new_raw_token  = Uuid::new_v4().to_string();
-    let new_token_hash = hash_refresh_token(&new_raw_token);
-    let new_expires_at = Utc::now() + Duration::days(180);
-    if let Ok(user_uuid) = Uuid::parse_str(&user_record.id) {
-        let _ = store::users::insert_refresh_token(
-            user_uuid, &new_token_hash, new_expires_at, None, None,
-        ).await;
-    }
+    const ROTATE_THRESHOLD_SECS: i64 = 7 * 24 * 3600;
+    let secs_remaining = token_record.expires_at - Utc::now().timestamp();
+    let outgoing_cookie_token = if secs_remaining <= ROTATE_THRESHOLD_SECS {
+        let _ = store::users::revoke_refresh_token(&hashed_token).await;
+        let new_raw_token  = Uuid::new_v4().to_string();
+        let new_token_hash = hash_refresh_token(&new_raw_token);
+        let new_expires_at = Utc::now() + Duration::days(180);
+        if let Ok(user_uuid) = Uuid::parse_str(&user_record.id) {
+            let _ = store::users::insert_refresh_token(
+                user_uuid, &new_token_hash, new_expires_at, None, None,
+            ).await;
+        }
+        new_raw_token
+    } else {
+        refresh_token.clone()
+    };
 
     Ok(HttpResponse::Ok()
         .cookie(
-            Cookie::build("refresh_token", new_raw_token)
+            Cookie::build("refresh_token", outgoing_cookie_token)
                 .path("/")
                 .http_only(true)
                 .finish(),
@@ -213,7 +223,6 @@ pub async fn handle_token_refresh(req: HttpRequest, config: web::Data<Config>) -
 
 #[delete("/logout")]
 pub async fn handle_logout(req: HttpRequest) -> Result<HttpResponse, AppError> {
-    // Revoke the refresh token in the DB so it can't be replayed.
     if let Some(cookie) = req.cookie("refresh_token") {
         let hashed = hash_refresh_token(cookie.value());
         if let Err(e) = store::users::revoke_refresh_token(&hashed).await {

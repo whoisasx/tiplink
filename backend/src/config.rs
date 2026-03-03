@@ -23,6 +23,8 @@ pub struct Config{
   pub jupiter_swap_url: String,
   pub sol_mint: String,
   pub solana_base_fee: u64,
+  pub helius_api_key: Option<String>,
+  pub helius_webhook_id: Option<String>,
 }
 
 impl Config{
@@ -54,6 +56,9 @@ impl Config{
         .parse::<u64>()
         .unwrap_or(5_000);
 
+    let helius_api_key = env::var("HELIUS_API_KEY").ok();
+    let helius_webhook_id = env::var("HELIUS_WEBHOOK_ID").ok();
+
     Config {
       host,
       port,
@@ -75,6 +80,8 @@ impl Config{
       jupiter_swap_url,
       sol_mint,
       solana_base_fee,
+      helius_api_key,
+      helius_webhook_id,
     }
   }
 }

@@ -70,7 +70,7 @@ pub async fn update_user_wallet(user_id: Uuid, wallet_pubkey: &str) -> Result<bo
 pub async fn find_refresh_token(token_hash: &str) -> Result<Option<RefreshTokenRow>, sqlx::Error> {
   sqlx::query_as!(
     RefreshTokenRow,
-    "SELECT * FROM refresh_tokens WHERE token_hash = $1 AND revoked = FALSE",
+    "SELECT * FROM refresh_tokens WHERE token_hash = $1",
     token_hash
   )
   .fetch_optional(pool())
@@ -103,11 +103,7 @@ pub async fn insert_refresh_token(
 
 pub async fn revoke_refresh_token(token_hash: &str) -> Result<bool, sqlx::Error> {
   let result = sqlx::query!(
-    "
-    UPDATE refresh_tokens
-    SET revoked = TRUE, revoked_at = NOW()
-    WHERE token_hash = $1
-    ",
+    "DELETE FROM refresh_tokens WHERE token_hash = $1",
     token_hash
   )
   .execute(pool())
@@ -118,11 +114,7 @@ pub async fn revoke_refresh_token(token_hash: &str) -> Result<bool, sqlx::Error>
 
 pub async fn revoke_all_user_tokens(user_id: Uuid) -> Result<bool, sqlx::Error> {
   let result = sqlx::query!(
-    "
-    UPDATE refresh_tokens
-    SET revoked = TRUE, revoked_at = NOW()
-    WHERE user_id = $1 AND revoked = FALSE
-    ",
+    "DELETE FROM refresh_tokens WHERE user_id = $1",
     user_id
   )
   .execute(pool())

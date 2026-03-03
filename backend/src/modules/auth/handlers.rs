@@ -1,6 +1,6 @@
 use chrono::{Duration, Utc};
 use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::time::Duration as StdDuration;
 use uuid::Uuid;
@@ -11,6 +11,98 @@ use crate::modules::{JwtClaims, auth::dto::{GoogleOAuthTokenResponse, GoogleUser
 #[derive(Deserialize)]
 struct MpcWalletCreateResponse {
     pubkey: String,
+}
+
+// ─── Helius webhook types ─────────────────────────────────────────────────────
+
+/// Shape of the GET /v0/webhooks/{id} response that is relevant to us.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct HeliusWebhookResponse {
+    webhook_url: String,
+    transaction_types: Vec<String>,
+    account_addresses: Vec<String>,
+    webhook_type: String,
+    #[serde(default)]
+    auth_header: Option<String>,
+}
+
+/// Body sent to PUT /v0/webhooks/{id}.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct HeliusWebhookUpdateBody {
+    webhook_url: String,
+    transaction_types: Vec<String>,
+    account_addresses: Vec<String>,
+    webhook_type: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    auth_header: Option<String>,
+}
+
+const HELIUS_API_BASE: &str = "https://api-mainnet.helius-rpc.com/v0/webhooks";
+
+/// Appends `new_address` to the Helius webhook identified by `webhook_id`.
+///
+/// The Helius update-webhook endpoint replaces `accountAddresses` entirely, so
+/// we first GET the current webhook to read all existing addresses, then PUT
+/// the merged (de-duplicated) list back. Failures are only logged as warnings
+/// so they never block the user login flow.
+async fn add_address_to_helius_webhook(
+    client: &reqwest::Client,
+    api_key: &str,
+    webhook_id: &str,
+    new_address: &str,
+) {
+    let get_url = format!("{}/{}?api-key={}", HELIUS_API_BASE, webhook_id, api_key);
+
+    let current = match client.get(&get_url).send().await {
+        Ok(r) => r,
+        Err(e) => {
+            tracing::warn!("Helius GET webhook failed for address {new_address}: {e}");
+            return;
+        }
+    };
+
+    let webhook: HeliusWebhookResponse = match current.json().await {
+        Ok(w) => w,
+        Err(e) => {
+            tracing::warn!("Helius GET webhook JSON parse failed: {e}");
+            return;
+        }
+    };
+
+    // De-duplicate: only append if the address isn't already monitored.
+    if webhook.account_addresses.iter().any(|a| a == new_address) {
+        tracing::debug!("Address {new_address} already registered on Helius webhook");
+        return;
+    }
+
+    let mut updated_addresses = webhook.account_addresses;
+    updated_addresses.push(new_address.to_string());
+
+    let put_url = format!("{}/{}?api-key={}", HELIUS_API_BASE, webhook_id, api_key);
+    let body = HeliusWebhookUpdateBody {
+        webhook_url: webhook.webhook_url,
+        transaction_types: webhook.transaction_types,
+        account_addresses: updated_addresses,
+        webhook_type: webhook.webhook_type,
+        auth_header: webhook.auth_header,
+    };
+
+    match client.put(&put_url).json(&body).send().await {
+        Ok(r) if r.status().is_success() => {
+            tracing::info!("Registered new wallet {new_address} on Helius webhook {webhook_id}");
+        }
+        Ok(r) => {
+            tracing::warn!(
+                "Helius PUT webhook returned {} for address {new_address}",
+                r.status()
+            );
+        }
+        Err(e) => {
+            tracing::warn!("Helius PUT webhook failed for address {new_address}: {e}");
+        }
+    }
 }
 
 pub async fn upsert_user(
@@ -32,11 +124,17 @@ pub async fn upsert_wallet(
     user_info: &GoogleUserInfo,
     mpc_url: &str,
     mpc_secret: &str,
+    helius_api_key: Option<&str>,
+    helius_webhook_id: Option<&str>,
 ) -> bool {
     let user = match store::users::find_user_by_google_sub(&user_info.id).await {
         Ok(Some(u)) => u,
         _ => return false,
     };
+
+    // Remember whether the user already had a wallet before this call.
+    // We only register new addresses on the Helius webhook (first-time creation).
+    let already_had_wallet = user.wallet_pubkey.is_some();
 
     let client = match reqwest::Client::builder()
         .timeout(StdDuration::from_secs(10))
@@ -63,9 +161,21 @@ pub async fn upsert_wallet(
         Err(_) => return false,
     };
 
-    store::users::update_user_wallet(user.id, &mpc_resp.pubkey)
+    let saved = store::users::update_user_wallet(user.id, &mpc_resp.pubkey)
         .await
-        .unwrap_or(false)
+        .unwrap_or(false);
+
+    if !saved {
+        return false;
+    }
+
+    if !already_had_wallet {
+        if let (Some(api_key), Some(webhook_id)) = (helius_api_key, helius_webhook_id) {
+            add_address_to_helius_webhook(&client, api_key, webhook_id, &mpc_resp.pubkey).await;
+        }
+    }
+
+    true
 }
 
 pub async fn upsert_refresh_token(
@@ -76,6 +186,9 @@ pub async fn upsert_refresh_token(
         Ok(Some(u)) => u,
         _ => return false,
     };
+
+    // Revoke every previous token for this user so we never accumulate stale rows.
+    let _ = store::users::revoke_all_user_tokens(user.id).await;
 
     let token_hash = hash_refresh_token(&token_info.refresh_token);
     let expires_at = Utc::now() + Duration::days(180);

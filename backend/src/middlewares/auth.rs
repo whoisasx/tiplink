@@ -4,6 +4,7 @@ use crate::config::Config;
 use crate::modules::auth::*;
 use crate::utils::*;
 
+/// Hard-rejects requests that have no valid JWT.
 pub async fn auth_middleware(req: ServiceRequest, next: Next<BoxBody>) -> Result<ServiceResponse<BoxBody>, Error> {
     let auth_header = req
         .headers()
@@ -39,5 +40,29 @@ pub async fn auth_middleware(req: ServiceRequest, next: Next<BoxBody>) -> Result
     };
 
     req.extensions_mut().insert(token_claims);
+    next.call(req).await
+}
+
+/// Attaches JWT claims to the request extension when a valid Bearer token is
+/// present, but **never rejects** the request. Handlers that need auth check
+/// extensions themselves and return 401 when claims are absent.
+pub async fn attach_claims_middleware(req: ServiceRequest, next: Next<BoxBody>) -> Result<ServiceResponse<BoxBody>, Error> {
+    let token = req
+        .headers()
+        .get(header::AUTHORIZATION)
+        .and_then(|h| h.to_str().ok())
+        .and_then(|h| h.strip_prefix("Bearer "))
+        .map(str::to_owned);
+
+    if let Some(t) = token {
+        let secret = req
+            .app_data::<web::Data<Config>>()
+            .map(|c| c.jwt_secret.clone())
+            .unwrap_or_default();
+        if let Ok(claims) = verify_jwt_token(&t, &secret) {
+            req.extensions_mut().insert(claims);
+        }
+    }
+
     next.call(req).await
 }
